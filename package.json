@@ -1,0 +1,19 @@
+{
+  "name": "replugger",
+  "version": "1.0.0",
+  "description": "",
+  "main": " ",
+  "dependencies": {
+    "codemirror": "^5.31.0",
+    "electron": "^1.7.9",
+    "flow-parser": "^0.58.0",
+    "jquery": "^3.2.1",
+    "underscore": "^1.8.3"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Glen Chiacchieri",
+  "license": "ISC"
+}
