@@ -939,6 +939,10 @@ function fade_background_color($element, alpha:number, color:string) {
         </script>
         <script type="text/javascript">
 
+            const $ = require('jquery');
+
+
+
             function evalInContext(scr, context) {
                 // execute script in private context
                 return (new Function( "with(this) { return " + scr + "}")).call(context);
@@ -954,8 +958,9 @@ function fade_background_color($element, alpha:number, color:string) {
             main_editor.refresh()
 
 
-            var current_line = main_editor.getLine(169-1);
-            var ast = flow.parse(current_line);
+            const current_line_number = 166;
+            var current_line = main_editor.getLine(current_line_number-1);
+            var current_line_ast = flow.parse(current_line);
 
             function ast_to_html(node) {
                 switch (node.type) {
@@ -989,7 +994,7 @@ function fade_background_color($element, alpha:number, color:string) {
                 }
             }
 
-            html_ast = ast_to_html(ast.body[0])
+            html_ast = ast_to_html(current_line_ast.body[0])
 
             $('#sidebar .current-line-expansion').append('<div class="current-line">'+html_ast+'</div>')
 
@@ -1100,6 +1105,17 @@ function fade_background_color($element, alpha:number, color:string) {
                         case statement
                         class declaration should call constructor
             */
+
+            const flowRemoveTypes = require('flow-remove-types');
+            const source = main_editor.getValue();
+            const ast = flow.parse(source);
+            var ast_before_current_line = ast.body.filter(node => node.loc.start.line < current_line_number);
+            var file_scope_line_number_ends = ast_before_current_line[ast_before_current_line.length-2].loc.start.line;
+            var file_scope = {module: {exports: {}}, replugger_vars: {}};
+            js_before_final_scope = flowRemoveTypes(source.split('\n').slice(0,file_scope_line_number_ends).join('\n')).toString()
+            // run node on js_before_final_scope in correct directory
+            // diff globals objects with _.difference(old_globals.keys(), globals.keys())
+            // print out in json
         </script>
     </body>
 </html>
