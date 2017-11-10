@@ -942,7 +942,6 @@ function fade_background_color($element, alpha:number, color:string) {
             const $ = require('jquery');
 
 
-
             function evalInContext(scr, context) {
                 // execute script in private context
                 return (new Function( "with(this) { return " + scr + "}")).call(context);
@@ -1111,8 +1110,23 @@ function fade_background_color($element, alpha:number, color:string) {
             const ast = flow.parse(source);
             var ast_before_current_line = ast.body.filter(node => node.loc.start.line < current_line_number);
             var file_scope_line_number_ends = ast_before_current_line[ast_before_current_line.length-2].loc.start.line;
-            var file_scope = {module: {exports: {}}, replugger_vars: {}};
-            js_before_final_scope = flowRemoveTypes(source.split('\n').slice(0,file_scope_line_number_ends).join('\n')).toString()
+            // flowRemoveTypes(source.split('\n').slice(0,file_scope_line_number_ends).join('\n')).toString()
+            js_before_final_scope = `var _ = require('/Users/glen/code/REPLugger/node_modules/underscore/underscore-min.js');
+${'var butts = 0;'}
+            
+var replugger_initial_global = [ 'console', 'DTRACE_NET_SERVER_CONNECTION', 'DTRACE_NET_STREAM_END', 'DTRACE_HTTP_SERVER_REQUEST', 'DTRACE_HTTP_SERVER_RESPONSE', 'DTRACE_HTTP_CLIENT_REQUEST', 'DTRACE_HTTP_CLIENT_RESPONSE', 'global', 'process', 'Buffer', 'clearImmediate', 'clearInterval', 'clearTimeout', 'setImmediate', 'setInterval', 'setTimeout', '__filename', 'exports', 'module', '__dirname', 'require', '_', 'replugger_initial_global', 'replugger_new_keys' ]
+var replugger_new_keys = _.difference(_.keys(global), replugger_initial_global);
+process.stdout.write(JSON.stringify(replugger_new_keys));` 
+console.log(js_before_final_scope)
+            const { spawn } = require('child_process');
+            var sub_process = spawn('node', ['--eval', js_before_final_scope])
+            sub_process.stdout.on('data', function(data) {
+                console.log('output!', data.toString())
+            })
+            sub_process.stderr.on('data', function(data) {
+                console.log('error:', data.toString())
+            })
+
             // run node on js_before_final_scope in correct directory
             // diff globals objects with _.difference(old_globals.keys(), globals.keys())
             // print out in json
