@@ -39,6 +39,11 @@
                 vertical-align: top;
                 padding: 5px;
             }
+            #sidebar h2 {
+                background-color: #ace0ff;
+                color: black;
+                padding: 4px 10px;
+            }
             #sidebar tbody td {
                 padding: 3px 0;
             }
@@ -178,7 +183,7 @@
             </table>
 
             <div id="current-line">
-                <h2>Line 166</h2>
+                <h2></h2>
                 <div class="current-line-expansion"></div>
                 <div class="interpreted-line"></div>
             </div>
@@ -190,12 +195,14 @@
         <script src="node_modules/codemirror/lib/codemirror.js"></script>
         <script src="node_modules/codemirror/mode/javascript/javascript.js"></script>
         <script src="node_modules/codemirror/addon/selection/active-line.js"></script>
+        <script src="node_modules/codemirror/keymap/vim.js"></script>
         <script src="node_modules/flow-parser/flow_parser.js" charset="utf-8"></script>
         <script type="text/javascript">
 
             const $ = require('jquery');
             const fs = require('fs');
             const CircularJSON = require('circular-json');
+            const flowRemoveTypes = require('flow-remove-types');
 
 
             function evalInContext(scr, context) {
@@ -203,14 +210,24 @@
                 return (new Function( "with(this) { return " + scr + "}")).call(context);
             }
 
+            CodeMirror.Vim.map('jj', '<Esc>', 'insert')
             main_editor = CodeMirror(document.querySelector('#main-editor'), {
                 value: fs.readFileSync('/Users/glen/code/flowsheets2/src/renderer.js', 'utf-8').toString(),
                 mode: 'javascript',
                 lineNumbers: true,
                 styleActiveLine: true,
+                indentUnit: 4,
+                keyMap: 'vim',
             });
             var current_line_number = 0;
-            main_editor.on('cursorActivity', function(instance) {
+            main_editor.on('cursorActivity', cursor_activity);
+
+            $('.CodeMirror').height($(window).height())
+            main_editor.refresh()
+
+            cursor_activity(main_editor)
+
+            function cursor_activity(instance) {
                 var line_number = instance.getCursor().line;
                 // line change
                 if (line_number !== current_line_number) {
@@ -218,79 +235,90 @@
 
                     { // make scope table
                     }
+                }
 
-                    { // show the values of the current line
-                        var current_line_src = instance.getLine(current_line_number);
-                        var current_line_ast = flow.parse(current_line_src);
+                { // show the values of the current line
+                    $('#sidebar #current-line h2').text('Line '+(current_line_number+1))
+
+                    var current_line_src = instance.getLine(current_line_number);
+                    var current_line_ast = flow.parse(current_line_src);
+                    console.log(current_line_ast)
+                    if (current_line_ast.body.length > 0 && current_line_ast.errors.length == 0) {
                         var html_ast = ast_to_html(current_line_ast.body[0])
+                    } else {
+                        var html_ast = current_line_src;
+                    }
 
-                        // write html to page
-                        $('#sidebar .current-line-expansion').html('<div class="current-line">'+html_ast+'</div>')
-                        $('#sidebar #current-line h2').text('Line '+current_line_number)
+                    // write html to page
+                    $('#sidebar .current-line-expansion').html('<div class="current-line">'+html_ast+'</div>')
 
-                        var fake_scope_for_now = {
-                            columns: 30,
-                            new_columns: 2,
-                            resize_drag: {
-                                original_width_in_columns: 1
-                            },
-                            clamp: function(num, min, max) {
-                                if (num < min) {
-                                    return min;
-                                } else if (num > max) {
-                                    return max
-                                }
-                                return num;
-                            },
-
-                            dy: 20,
-                            dx: 20,
-                            cell_width: 88,
-                            cell_height: 19,
-                        }
-                        console.log(html_ast)
-                        $('.interpreted-line').html(evaluate_html_ast(document.querySelector('.current-line span'), fake_scope_for_now))
-
-                        $('.interpreted-line div').filter(function(i, el ) {
-                            return el.innerText == '...'
-                        }).css('opacity', 0)
-
-                        // mouseover behavior
-                        $('.interpreted-line div[data]').on('mouseenter', function(evt) {
-                            var $target = $(evt.target);
-                            if ($target.css('opacity') !== '0') {
-                                $target.addClass('hover')
-                                var $subexpression = $('.current-line span').filter(function(i, el) {
-                                    return $(el).text() == $target.attr('data')
-                                })
-                                $subexpression.addClass('hover')
+                    var fake_scope_for_now = {
+                        rows: 300,
+                        columns: 30,
+                        width: 2640,
+                        height: 5700,
+                        new_columns: 2,
+                        resize_drag: {
+                            original_width_in_columns: 1
+                        },
+                        clamp: function(num, min, max) {
+                            if (num < min) {
+                                return min;
+                            } else if (num > max) {
+                                return max
                             }
-                        }).on('mouseleave', function(evt) {
-                            var $target = $(evt.target);
-                            $target.removeClass('hover')
+                            return num;
+                        },
+
+                        dy: 20,
+                        dx: 20,
+                        cell_width: 88,
+                        cell_height: 19,
+                    }
+
+                    if (current_line_ast.body.length > 0) {
+                        $('.interpreted-line').html(evaluate_html_ast(document.querySelector('.current-line span'), fake_scope_for_now))
+                    } else {
+                        $('.interpreted-line').html('');
+                    }
+
+                    $('.interpreted-line div').filter(function(i, el ) {
+                        return el.innerText == '...'
+                    }).css('opacity', 0)
+
+                    // mouseover behavior
+                    $('.interpreted-line div[data]').on('mouseenter', function(evt) {
+                        var $target = $(evt.target);
+                        if ($target.css('opacity') !== '0') {
+                            $target.addClass('hover')
                             var $subexpression = $('.current-line span').filter(function(i, el) {
                                 return $(el).text() == $target.attr('data')
                             })
-                            $subexpression.removeClass('hover')
-
+                            $subexpression.addClass('hover')
+                        }
+                    }).on('mouseleave', function(evt) {
+                        var $target = $(evt.target);
+                        $target.removeClass('hover')
+                        var $subexpression = $('.current-line span').filter(function(i, el) {
+                            return $(el).text() == $target.attr('data')
                         })
+                        $subexpression.removeClass('hover')
 
-                        $('.current-line span').on('mouseenter', function(evt) {
-                            evt.stopPropagation();
-                            var $target = $(evt.target);
-                            $target.addClass('hover');
-                            $('.interpreted-line div[data="'+ $target.text() +'"]').addClass('hover')
-                        }).on('mouseleave', function(evt) {
-                            var $target = $(evt.target);
-                            $target.removeClass('hover');
-                            $('.interpreted-line div[data="'+ $target.text() +'"]').removeClass('hover')
-                        })
-                    }
+                    })
+
+                    $('.current-line span').on('mouseenter', function(evt) {
+                        evt.stopPropagation();
+                        var $target = $(evt.target);
+                        $target.addClass('hover');
+                        $('.interpreted-line div[data="'+ $target.text() +'"]').addClass('hover')
+                    }).on('mouseleave', function(evt) {
+                        var $target = $(evt.target);
+                        $target.removeClass('hover');
+                        $('.interpreted-line div[data="'+ $target.text() +'"]').removeClass('hover')
+                    })
                 }
-            })
-
-            $('.CodeMirror').height($(window).height())
-            main_editor.refresh()
+            
+            }
 
 
             function ast_to_html(node) {
@@ -317,9 +345,11 @@
                     case 'AssignmentExpression':
                         return '<span><span>'+ ast_to_html(node.left) +' '+ node.operator +'</span> '+ ast_to_html(node.right) +'</span>'
                     case 'MemberExpression':
-                        return `<span><span>${node.object.name}</span>.${node.property.name}</span>`
+                        return `<span><span>${node.object.name || node.object.raw || 'this'}</span>.${node.property.name}</span>`
                     case 'CallExpression':
-                        return `<span><span>${node.callee.name}(</span>${node.arguments.map(arg_node => ast_to_html(arg_node)).join('<span>, </span>')})</span>`
+                        return `<span><span>${ast_to_html(node.callee)}(</span>${node.arguments.map(arg_node => ast_to_html(arg_node)).join('<span>, </span>')})</span>`
+                    case 'ThisExpression':
+                        return `<span>this</span>`;
                     default:
                         return 'DEFAULT UH OH'
                 }
@@ -329,6 +359,9 @@
 
 
             function value_to_string(value) {
+                if (_.isFunction(value)) {
+                    return value;
+                }
                 if (_.isObject(value)) {
                     var str = '{'
                     _.each(value, (val, key) => {
@@ -336,6 +369,8 @@
                     })
                     str +=' }'
                     return str
+                } else if (_.isString(value)) {
+                    return `"${value}"`; 
                 }
                 return value
             }
@@ -349,8 +384,7 @@
 
             }
             function evaluate_html_ast(node, scope) {
-                // evaluates 
-                console.log(node)
+                // evaluates each section of a js expression with span tags around it
                 if (node.children.length == 0) {
                     return output_html(node.innerText, $(node).width(), scope)
                 }
@@ -385,10 +419,10 @@
                         while loop
                         case statement
                         class declaration should call constructor
-                        function
+                        function, need to create sample arguments
+                        replugger(), a function that saves running state and loads it in the sidebar
             */
 
-            const flowRemoveTypes = require('flow-remove-types');
             const source = main_editor.getValue();
             const ast = flow.parse(source);
             var ast_before_current_line = ast.body.filter(node => node.loc.start.line < current_line_number);
@@ -414,7 +448,6 @@
             var file_scope_line_number_ends = ast_before_current_line[ast_before_current_line.length-2].loc.start.line;
             
             // TODO: actually build flowsheets fully using npm build command since other modules need to be imported
-            // TODO: modify source to write to custom object instead of local scope (functions, classes, vars/const, module.exports )
 
             var js = flowRemoveTypes(source.split('\n').slice(0, file_scope_line_number_ends).join('\n')).toString();
 
