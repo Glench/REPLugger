@@ -53,8 +53,9 @@
             #sidebar thead th {
                 text-align: left;
                 padding: 3px 5px;
-                background-color: #000;
-                color: white;
+                background-color: #d2d2d2;
+                color: black;
+                border-bottom: 1px solid #9e9e9e;
             }
             #sidebar tr:last-child td {
                 border-bottom: 10px solid white;
@@ -210,7 +211,6 @@
                 return (new Function( "with(this) { return " + scr + "}")).call(context);
             }
 
-            CodeMirror.Vim.map('jj', '<Esc>', 'insert')
             main_editor = CodeMirror(document.querySelector('#main-editor'), {
                 value: fs.readFileSync('/Users/glen/code/flowsheets2/src/renderer.js', 'utf-8').toString(),
                 mode: 'javascript',
@@ -219,14 +219,17 @@
                 indentUnit: 4,
                 keyMap: 'vim',
             });
-            var current_line_number = 0;
-            main_editor.on('cursorActivity', cursor_activity);
+            CodeMirror.Vim.map('jj', '<Esc>', 'insert')
 
             $('.CodeMirror').height($(window).height())
+            main_editor.setCursor({line: 177, ch: 20})
             main_editor.refresh()
 
+            main_editor.on('cursorActivity', cursor_activity);
             cursor_activity(main_editor)
 
+
+            var current_line_number = 0;
             function cursor_activity(instance) {
                 var line_number = instance.getCursor().line;
                 // line change
@@ -234,6 +237,12 @@
                     current_line_number = line_number;
 
                     { // make scope table
+                        const source = main_editor.getValue();
+                        const ast_before_current_line = flow.parse(source);
+                        ast_before_current_line.body = ast_before_current_line.body.filter(node => node.loc.start.line < current_line_number)
+                        console.log('ast', ast_before_current_line)
+                        const scopes = ast_to_list_of_scopes(ast_before_current_line, 'file', current_line_number, instance.getValue(), [])
+                        console.log('scopes:', scopes)
                     }
                 }
 
@@ -242,7 +251,7 @@
 
                     var current_line_src = instance.getLine(current_line_number);
                     var current_line_ast = flow.parse(current_line_src);
-                    console.log(current_line_ast)
+                    console.log("current line's ast:", current_line_ast)
                     if (current_line_ast.body.length > 0 && current_line_ast.errors.length == 0) {
                         var html_ast = ast_to_html(current_line_ast.body[0])
                     } else {
@@ -317,7 +326,79 @@
                         $('.interpreted-line div[data="'+ $target.text() +'"]').removeClass('hover')
                     })
                 }
-            
+            }
+
+            function ast_to_list_of_scopes(node, scope_name, current_line_number, src, output) {
+                // produce a list of scopes with variables in each scope:
+                // [
+                //    {name: 'file': names_in_scope: ['clamp']},
+                //    {name: 'function initialize_grid() {', names_in_scope: ['width', 'height']}]
+                // ]
+
+                var scope = {name: scope_name, names_in_scope: []}
+
+                var nodes = null;
+                if (node.type == 'Program') {
+                    scope.names_in_scope.push('module')
+                    nodes = node.body;
+                } else if (node.type == 'FunctionDeclaration') {
+                    node.params.forEach(param => scope.names_in_scope.push(param.name))
+                    nodes = node.body.body;
+                } else if (node.type == 'BlockStatement') {
+                    nodes = node.body;
+                } else if (node.type == 'CallExpression') {
+                    nodes = node.arguments; //node.arguments[node.arguments.length-1].body;
+                }
+
+                if (!nodes) return output;
+
+                // find declarations 
+                nodes = nodes.filter(node => node.loc.start.line <= current_line_number);
+                nodes.forEach(node => {
+                    switch (node.type) {
+                        case 'VariableDeclaration':
+                            node.declarations.forEach(decl => {
+                                scope.names_in_scope.push(decl.id.name)
+                            })
+                            return;
+                        // case 'ExpressionStatement':
+                        //     return;
+                        case 'FunctionDeclaration':
+                        case 'ClassDeclaration':
+                            scope.names_in_scope.push(node.id.name);
+                            return;
+                        case 'FunctionExpression':
+                            node.params.forEach(param => {
+                                scope.names_in_scope.push(param.name);
+                            });
+                            return;
+                    }
+                })
+
+                if (scope.names_in_scope.length > 0) {
+                    output.push(scope);
+                }
+
+                const last_node = nodes[nodes.length-1];
+                if (!last_node) return output;
+
+                var current_line_src = src.split('\n')[last_node.loc.start.line-1];
+
+                if (last_node.type == 'FunctionDeclaration') {
+                    ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
+                } else if (last_node.type == 'ExpressionStatement') {
+                    ast_to_list_of_scopes(last_node.expression, current_line_src, current_line_number, src, output);
+                } else if (last_node.type == 'CallExpression') {
+                    ast_to_list_of_scopes(last_node.arguments[last_node.arguments.length-1], current_line_src, current_line_number, src, output)
+                } else if (last_node.type == 'IfStatement') {
+                    ast_to_list_of_scopes(last_node.consequent, current_line_src, current_line_number, src, output);
+                } else if (last_node.type == 'FunctionExpression') {
+                    ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output)
+                } else {
+                    throw 'unhandled AST node type: '+node.type;
+                }
+
+                return output;
             }
 
 
@@ -418,30 +499,20 @@
                         for loop
                         while loop
                         case statement
+                        recursion
                         class declaration should call constructor
                         function, need to create sample arguments
                         replugger(), a function that saves running state and loads it in the sidebar
+                        how to handle i/o (writing to disk, network requests)
+
+                    An interesting scenario to consider:
+                        I want to scrape all the pages from the texas death row site. I want all 500 requests in memory to do computations on them.
             */
 
-            const source = main_editor.getValue();
-            const ast = flow.parse(source);
-            var ast_before_current_line = ast.body.filter(node => node.loc.start.line < current_line_number);
             // console.log(ast_before_current_line)
             var globals_to_output = ast_before_current_line.map(function(node, i) {
                 if (i > ast_before_current_line.length - 2) return; // don't include last line
                 switch(node.type) {
-                    case 'VariableDeclaration':
-                        return node.declarations[0].id.name; // @Robustness: doesn't support `var foo = 1, bar = 2;` at the moment
-                    case 'ExpressionStatement':
-                        if (node.expression.type == 'AssignmentExpression') {
-                            if (node.expression.left.type == 'MemberExpression') {
-                                return 'module'
-                            }
-                        }
-                        return
-                    case 'FunctionDeclaration':
-                    case 'ClassDeclaration':
-                        return node.id.name;
                 }
             }).filter(name => !_.isUndefined(name))
             // console.log(globals_to_output)
