@@ -22,6 +22,9 @@
             .CodeMirror {
                 border: 1px solid #ccc;
             }
+            .CodeMirror .CodeMirror-activeline-background {
+                background-color: #ace0ff;
+            }
             #main-editor {
                 width: 63%;
                 display: inline-block;
@@ -56,6 +59,7 @@
             }
             #sidebar tbody td:nth-child(2) {
                 padding-left: 10px;
+                white-space: nowrap;
             }
 
             #sidebar .current-line-expansion {
@@ -101,6 +105,9 @@
         <div id="main-editor"></div>
 
         <div id="sidebar">
+            <div id="test">
+            </div>
+
             <table>
                 <thead> <tr> <th colspan="2">file</th> </tr> </thead>
 
@@ -180,13 +187,15 @@
 
         <script src="node_modules/jquery/dist/jquery.js"></script>
         <script src="node_modules/underscore/underscore.js"></script>
-        <script src="node_modules/codemirror/lib/codemirror.js" charset="utf-8"></script>
+        <script src="node_modules/codemirror/lib/codemirror.js"></script>
         <script src="node_modules/codemirror/mode/javascript/javascript.js"></script>
+        <script src="node_modules/codemirror/addon/selection/active-line.js"></script>
         <script src="node_modules/flow-parser/flow_parser.js" charset="utf-8"></script>
         <script type="text/javascript">
 
             const $ = require('jquery');
             const fs = require('fs');
+            const CircularJSON = require('circular-json');
 
 
             function evalInContext(scr, context) {
@@ -198,15 +207,91 @@
                 value: fs.readFileSync('/Users/glen/code/flowsheets2/src/renderer.js', 'utf-8').toString(),
                 mode: 'javascript',
                 lineNumbers: true,
+                styleActiveLine: true,
             });
+            var current_line_number = 0;
+            main_editor.on('cursorActivity', function(instance) {
+                var line_number = instance.getCursor().line;
+                // line change
+                if (line_number !== current_line_number) {
+                    current_line_number = line_number;
+
+                    { // make scope table
+                    }
+
+                    { // show the values of the current line
+                        var current_line_src = instance.getLine(current_line_number);
+                        var current_line_ast = flow.parse(current_line_src);
+                        var html_ast = ast_to_html(current_line_ast.body[0])
+
+                        // write html to page
+                        $('#sidebar .current-line-expansion').html('<div class="current-line">'+html_ast+'</div>')
+                        $('#sidebar #current-line h2').text('Line '+current_line_number)
+
+                        var fake_scope_for_now = {
+                            columns: 30,
+                            new_columns: 2,
+                            resize_drag: {
+                                original_width_in_columns: 1
+                            },
+                            clamp: function(num, min, max) {
+                                if (num < min) {
+                                    return min;
+                                } else if (num > max) {
+                                    return max
+                                }
+                                return num;
+                            },
+
+                            dy: 20,
+                            dx: 20,
+                            cell_width: 88,
+                            cell_height: 19,
+                        }
+                        console.log(html_ast)
+                        $('.interpreted-line').html(evaluate_html_ast(document.querySelector('.current-line span'), fake_scope_for_now))
+
+                        $('.interpreted-line div').filter(function(i, el ) {
+                            return el.innerText == '...'
+                        }).css('opacity', 0)
+
+                        // mouseover behavior
+                        $('.interpreted-line div[data]').on('mouseenter', function(evt) {
+                            var $target = $(evt.target);
+                            if ($target.css('opacity') !== '0') {
+                                $target.addClass('hover')
+                                var $subexpression = $('.current-line span').filter(function(i, el) {
+                                    return $(el).text() == $target.attr('data')
+                                })
+                                $subexpression.addClass('hover')
+                            }
+                        }).on('mouseleave', function(evt) {
+                            var $target = $(evt.target);
+                            $target.removeClass('hover')
+                            var $subexpression = $('.current-line span').filter(function(i, el) {
+                                return $(el).text() == $target.attr('data')
+                            })
+                            $subexpression.removeClass('hover')
+
+                        })
+
+                        $('.current-line span').on('mouseenter', function(evt) {
+                            evt.stopPropagation();
+                            var $target = $(evt.target);
+                            $target.addClass('hover');
+                            $('.interpreted-line div[data="'+ $target.text() +'"]').addClass('hover')
+                        }).on('mouseleave', function(evt) {
+                            var $target = $(evt.target);
+                            $target.removeClass('hover');
+                            $('.interpreted-line div[data="'+ $target.text() +'"]').removeClass('hover')
+                        })
+                    }
+                }
+            })
 
             $('.CodeMirror').height($(window).height())
             main_editor.refresh()
 
-
-            const current_line_number = 166;
-            var current_line = main_editor.getLine(current_line_number-1);
-            var current_line_ast = flow.parse(current_line);
 
             function ast_to_html(node) {
                 switch (node.type) {
@@ -240,29 +325,8 @@
                 }
             }
 
-            html_ast = ast_to_html(current_line_ast.body[0])
 
-            $('#sidebar .current-line-expansion').append('<div class="current-line">'+html_ast+'</div>')
 
-            var html_ast = document.querySelector('#sidebar .current-line > span');
-            var scope = {
-                columns: 30,
-                new_columns: 2,
-                resize_drag: {
-                    original_width_in_columns: 1
-                },
-                clamp: function(num, min, max) {
-                    if (num < min) {
-                        return min;
-                    } else if (num > max) {
-                        return max
-                    }
-                    return num;
-                },
-
-                dx: 20,
-                cell_width: 88,
-            }
 
             function value_to_string(value) {
                 if (_.isObject(value)) {
@@ -276,7 +340,7 @@
                 return value
             }
 
-            function output_html(text, width) {
+            function output_html(text, width, scope) {
                 try {
                     return '<div data="'+ text +'" style="width: '+ (width-2) +'px;">'+value_to_string(evalInContext(text, scope))+'</div>';
                 } catch(e) {
@@ -284,58 +348,25 @@
                 }
 
             }
-            function interpret_html_ast(node) {
+            function evaluate_html_ast(node, scope) {
+                // evaluates 
+                console.log(node)
                 if (node.children.length == 0) {
-                    return output_html(node.innerText, $(node).width())
+                    return output_html(node.innerText, $(node).width(), scope)
                 }
 
                 var output = '<div style="width: '+ ($(node).width()) +'px;">\n';
 
-                output += output_html($(node).text(), $(node).width())
+                output += output_html($(node).text(), $(node).width(), scope)
 
                 output += '<div class="children" style="width: '+ ($(node).width()) +'px;">'
                 for (var i = 0; i < node.children.length; ++i) {
                     var child = node.children[i];
-                    output += interpret_html_ast(child)
+                    output += evaluate_html_ast(child, scope)
                 }
                 output += '</div></div>\n'
                 return output;
             }
-            $('.interpreted-line').append(interpret_html_ast(html_ast))
-
-            $('.interpreted-line div').filter(function(i, el ) {
-                return el.innerText == '...'
-            }).css('opacity', 0)
-
-            $('.interpreted-line div[data]').on('mouseenter', function(evt) {
-                var $target = $(evt.target);
-                if ($target.css('opacity') !== '0') {
-                    $target.addClass('hover')
-                    var $subexpression = $('.current-line span').filter(function(i, el) {
-                        return $(el).text() == $target.attr('data')
-                    })
-                    $subexpression.addClass('hover')
-                }
-            }).on('mouseleave', function(evt) {
-                var $target = $(evt.target);
-                $target.removeClass('hover')
-                var $subexpression = $('.current-line span').filter(function(i, el) {
-                    return $(el).text() == $target.attr('data')
-                })
-                $subexpression.removeClass('hover')
-
-            })
-
-            $('.current-line span').on('mouseenter', function(evt) {
-                evt.stopPropagation();
-                var $target = $(evt.target);
-                $target.addClass('hover');
-                $('.interpreted-line div[data="'+ $target.text() +'"]').addClass('hover')
-            }).on('mouseleave', function(evt) {
-                var $target = $(evt.target);
-                $target.removeClass('hover');
-                $('.interpreted-line div[data="'+ $target.text() +'"]').removeClass('hover')
-            })
 
 
             /*
@@ -361,32 +392,83 @@
             const source = main_editor.getValue();
             const ast = flow.parse(source);
             var ast_before_current_line = ast.body.filter(node => node.loc.start.line < current_line_number);
+            // console.log(ast_before_current_line)
+            var globals_to_output = ast_before_current_line.map(function(node, i) {
+                if (i > ast_before_current_line.length - 2) return; // don't include last line
+                switch(node.type) {
+                    case 'VariableDeclaration':
+                        return node.declarations[0].id.name; // @Robustness: doesn't support `var foo = 1, bar = 2;` at the moment
+                    case 'ExpressionStatement':
+                        if (node.expression.type == 'AssignmentExpression') {
+                            if (node.expression.left.type == 'MemberExpression') {
+                                return 'module'
+                            }
+                        }
+                        return
+                    case 'FunctionDeclaration':
+                    case 'ClassDeclaration':
+                        return node.id.name;
+                }
+            }).filter(name => !_.isUndefined(name))
+            // console.log(globals_to_output)
             var file_scope_line_number_ends = ast_before_current_line[ast_before_current_line.length-2].loc.start.line;
             
             // TODO: actually build flowsheets fully using npm build command since other modules need to be imported
             // TODO: modify source to write to custom object instead of local scope (functions, classes, vars/const, module.exports )
 
-            js_before_final_scope = `${flowRemoveTypes(source.split('\n').slice(0,file_scope_line_number_ends).join('\n')).toString()}
+            var js = flowRemoveTypes(source.split('\n').slice(0, file_scope_line_number_ends).join('\n')).toString();
 
-if (!_) {
-    _ = require('/Users/glen/code/REPLugger/node_modules/underscore/underscore-min.js');
+            js_before_final_scope = `${js}
+
+${fs.readFileSync('/Users/glen/code/REPLugger/node_modules/circular-json/build/circular-json.js').toString()}
+var replugger_output = {};
+${globals_to_output.map(name => `replugger_output.${name} = ${name};`).join('\n')}
+var replugger_replacer = function(key, value) {
+    if (_.isFunction(value)) {
+        return '[Function]'
+    }
+    return value;
 }
-var replugger_initial_global = [ 'console', 'DTRACE_NET_SERVER_CONNECTION', 'DTRACE_NET_STREAM_END', 'DTRACE_HTTP_SERVER_REQUEST', 'DTRACE_HTTP_SERVER_RESPONSE', 'DTRACE_HTTP_CLIENT_REQUEST', 'DTRACE_HTTP_CLIENT_RESPONSE', 'global', 'process', 'Buffer', 'clearImmediate', 'clearInterval', 'clearTimeout', 'setImmediate', 'setInterval', 'setTimeout', '__filename', 'exports', 'module', '__dirname', 'require', '_', 'replugger_initial_global', 'replugger_new_keys' ]
-var replugger_new_keys = _.difference(_.keys(global), replugger_initial_global);
-process.stdout.write(JSON.stringify(_.keys(global))); 
-process.stdout.write(JSON.stringify(replugger_new_keys)); 
-process.stdout.write(JSON.stringify(_.pick(global, replugger_new_keys)));` 
-console.log(js_before_final_scope)
+fs.writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.stringify(replugger_output, replugger_replacer));
+process.stdout.write('ok')
+process.exit();`
 
-            const { spawn } = require('child_process');
-            var sub_process = spawn('node', ['--eval', js_before_final_scope], {cwd: '/Users/glen/code/flowsheets2/build/'})
-            sub_process.stdout.on('data', function(data) {
-                console.log('output!', data.toString())
-            })
-            sub_process.stderr.on('data', function(data) {
-                console.log('error:', data.toString())
-            })
+            console.log(js_before_final_scope)
 
+            const { spawnSync } = require('child_process');
+            var sub_process = spawnSync('node', ['--eval', js_before_final_scope], {cwd: '/Users/glen/code/flowsheets2/build/'})
+            if (sub_process.stdout.toString() !== 'ok') {
+                console.log(sub_process.stderr.toString())
+            }
+
+            var values = CircularJSON.parse(fs.readFileSync('tmp.js').toString())
+
+            const React = require('react');
+            const ReactDOM = require('react-dom');
+
+            class Table extends React.Component {
+                render() {
+                    var keys = _.keys(this.props.scope);
+                    keys.sort();
+                    return React.createElement('table', null, [
+                        React.createElement('thead', null,
+                            React.createElement('tr', null,
+                                React.createElement('th', {colSpan: 2}, 'file')
+                            )
+                        ),
+                        React.createElement('tbody', null,
+                            keys.map(name => {
+                                return React.createElement('tr', null, [
+                                    React.createElement('td', null, name),
+                                    React.createElement('td', null, CircularJSON.stringify(this.props.scope[name]).slice(0, 400))
+                                ])
+                            })
+                        )
+                    ])
+                }
+            }
+
+            ReactDOM.render(React.createElement(Table, {scope: values}), document.querySelector('#test'))
         </script>
     </body>
 </html>

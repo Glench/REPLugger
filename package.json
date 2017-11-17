@@ -4,14 +4,15 @@
   "description": "",
   "main": "electron_app.js",
   "dependencies": {
+    "circular-json": "^0.4.0",
     "codemirror": "^5.31.0",
     "deepcopy": "^0.6.3",
     "electron": "^1.7.9",
     "flow-parser": "^0.58.0",
     "flow-remove-types": "^1.2.3",
     "jquery": "^3.2.1",
-    "react": "^16.0.0",
-    "react-dom": "^16.0.0",
+    "react": "^16.1.1",
+    "react-dom": "^16.1.1",
     "underscore": "^1.8.3"
   },
   "devDependencies": {},
