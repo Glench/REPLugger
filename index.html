@@ -244,16 +244,16 @@
                 render() {
                     return React.createElement('table', null, this.props.scopes.map(scope => {
                         scope.names_in_scope.sort();
-                        return [React.createElement('thead', null,
+                        return [React.createElement('thead', {key: scope.name},
                             React.createElement('tr', null,
                                 React.createElement('th', {colSpan: 2}, scope.name)
                             )
                         ),
-                        React.createElement('tbody', null,
+                        React.createElement('tbody', {key: scope.name+' body'},
                             scope.names_in_scope.map(name => {
-                                return React.createElement('tr', null, [
-                                    React.createElement('td', null, name),
-                                    React.createElement('td', null, '...')
+                                return React.createElement('tr', {key: name}, [
+                                    React.createElement('td', {key: name+' name'}, name),
+                                    React.createElement('td', {key: name+' value'}, '...')
                                 ])
                             })
                         )
@@ -294,11 +294,9 @@
 
                     { // make scope table
                         const source = main_editor.getValue();
-                        const ast_before_current_line = flow.parse(source);
-                        ast_before_current_line.body = ast_before_current_line.body.filter(node => node.loc.start.line < current_line_number)
-                        console.log('ast', ast_before_current_line)
+                        const ast_before_current_line = flow.parse(source.split('\n').slice(0, current_line_number).join('\n'));
+                        // console.log('ast', ast_before_current_line)
                         const scopes = ast_to_list_of_scopes(ast_before_current_line, 'file', current_line_number, instance.getValue(), [])
-                        console.log('scopes:', scopes)
 
                         ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes}), document.querySelector('#test'))
                     }
