@@ -282,6 +282,11 @@
 
             var current_line_number = 0;
             function cursor_activity(instance) {
+                // don't change sidebar if user is highlighting
+                if (instance.getSelection()) {
+                    return;
+                }
+
                 var line_number = instance.getCursor().line;
                 // line change
                 if (line_number !== current_line_number) {
