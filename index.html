@@ -44,6 +44,15 @@
                 color: black;
                 padding: 4px 10px;
             }
+            #test {
+                overflow: auto;
+            }
+            #sidebar #test {
+                border: 1px solid #ddd;
+            }
+            #sidebar table {
+                width: 100%;
+            }
             #sidebar tbody td {
                 padding: 3px 0;
             }
@@ -68,6 +77,13 @@
                 white-space: nowrap;
             }
 
+            #sidebar #current-line {
+                position: absolute;
+                bottom: 0;
+                background-color: white;
+                width: 36%;
+                padding-bottom: 20px;
+            }
             #sidebar .current-line-expansion {
                 font-size: 14px;
                 white-space: nowrap;
@@ -114,7 +130,7 @@
             <div id="test">
             </div>
 
-            <table>
+<!--             <table>
                 <thead> <tr> <th colspan="2">file</th> </tr> </thead>
 
                 <tbody>
@@ -182,7 +198,7 @@
                     <tr><td>var previous_output_height</td><td>ui_block.output_height;</td></tr>
                 </tbody>
             </table>
-
+ -->
             <div id="current-line">
                 <h2></h2>
                 <div class="current-line-expansion"></div>
@@ -202,6 +218,8 @@
 
             const $ = require('jquery');
             const fs = require('fs');
+            const React = require('react');
+            const ReactDOM = require('react-dom');
             const CircularJSON = require('circular-json');
             const flowRemoveTypes = require('flow-remove-types');
 
@@ -209,6 +227,39 @@
             function evalInContext(scr, context) {
                 // execute script in private context
                 return (new Function( "with(this) { return " + scr + "}")).call(context);
+            }
+
+            class ScopeTable extends React.Component {
+                update_height() {
+                    setTimeout(function() {
+                        $('#test').height($(window).height() - $('#current-line').height()-50).scrollTop(100000)
+                    }, 300)
+                }
+                componentDidUpdate() {
+                    this.update_height();
+                }
+                componentDidMount() {
+                    this.update_height();
+                }
+                render() {
+                    return React.createElement('table', null, this.props.scopes.map(scope => {
+                        scope.names_in_scope.sort();
+                        return [React.createElement('thead', null,
+                            React.createElement('tr', null,
+                                React.createElement('th', {colSpan: 2}, scope.name)
+                            )
+                        ),
+                        React.createElement('tbody', null,
+                            scope.names_in_scope.map(name => {
+                                return React.createElement('tr', null, [
+                                    React.createElement('td', null, name),
+                                    React.createElement('td', null, '...')
+                                ])
+                            })
+                        )
+                        ]
+                    }));
+                }
             }
 
             main_editor = CodeMirror(document.querySelector('#main-editor'), {
@@ -222,7 +273,7 @@
             CodeMirror.Vim.map('jj', '<Esc>', 'insert')
 
             $('.CodeMirror').height($(window).height())
-            main_editor.setCursor({line: 177, ch: 20})
+            main_editor.setCursor({line: 201, ch: 20})
             main_editor.refresh()
 
             main_editor.on('cursorActivity', cursor_activity);
@@ -243,6 +294,8 @@
                         console.log('ast', ast_before_current_line)
                         const scopes = ast_to_list_of_scopes(ast_before_current_line, 'file', current_line_number, instance.getValue(), [])
                         console.log('scopes:', scopes)
+
+                        ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes}), document.querySelector('#test'))
                     }
                 }
 
@@ -328,6 +381,7 @@
                 }
             }
 
+
             function ast_to_list_of_scopes(node, scope_name, current_line_number, src, output) {
                 // produce a list of scopes with variables in each scope:
                 // [
@@ -348,6 +402,8 @@
                     nodes = node.body;
                 } else if (node.type == 'CallExpression') {
                     nodes = node.arguments; //node.arguments[node.arguments.length-1].body;
+                } else if (node.type == 'IfStatement') {
+                    nodes = node.consequent.body;
                 }
 
                 if (!nodes) return output;
@@ -384,18 +440,27 @@
 
                 var current_line_src = src.split('\n')[last_node.loc.start.line-1];
 
-                if (last_node.type == 'FunctionDeclaration') {
+                if        (last_node.type == 'FunctionDeclaration') {
                     ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
                 } else if (last_node.type == 'ExpressionStatement') {
                     ast_to_list_of_scopes(last_node.expression, current_line_src, current_line_number, src, output);
                 } else if (last_node.type == 'CallExpression') {
-                    ast_to_list_of_scopes(last_node.arguments[last_node.arguments.length-1], current_line_src, current_line_number, src, output)
+                    ast_to_list_of_scopes(last_node.arguments[last_node.arguments.length-1], current_line_src, current_line_number, src, output);
                 } else if (last_node.type == 'IfStatement') {
-                    ast_to_list_of_scopes(last_node.consequent, current_line_src, current_line_number, src, output);
+                    console.log(last_node.consequent.loc.start.line, current_line_number+1, last_node.consequent.loc.end.line, (last_node.consequent.loc.end.line > current_line_number+1 && last_node.consequent.loc.start.line < current_line_number+1))
+                    console.log(last_node)
+                    if (!last_node.alternate || (last_node.consequent.loc.end.line > current_line_number+1 && last_node.consequent.loc.start.line < current_line_number+1)) {
+                        ast_to_list_of_scopes(last_node.consequent, src.split('\n')[last_node.consequent.loc.start.line-1], current_line_number, src, output);
+                    } else {
+                        ast_to_list_of_scopes(last_node.alternate, src.split('\n')[last_node.alternate.loc.start.line-1], current_line_number, src, output);
+                    }
                 } else if (last_node.type == 'FunctionExpression') {
-                    ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output)
+                    ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
+                } else if (last_node.type == 'BlockStatement') {
+                    ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
                 } else {
-                    throw 'unhandled AST node type: '+node.type;
+                    // console.log('error-causing node:', last_node)
+                    // throw 'unhandled AST node type: '+last_node.type;
                 }
 
                 return output;
@@ -510,45 +575,43 @@
             */
 
             // console.log(ast_before_current_line)
-            var globals_to_output = ast_before_current_line.map(function(node, i) {
-                if (i > ast_before_current_line.length - 2) return; // don't include last line
-                switch(node.type) {
-                }
-            }).filter(name => !_.isUndefined(name))
-            // console.log(globals_to_output)
-            var file_scope_line_number_ends = ast_before_current_line[ast_before_current_line.length-2].loc.start.line;
+//             var globals_to_output = ast_before_current_line.map(function(node, i) {
+//                 if (i > ast_before_current_line.length - 2) return; // don't include last line
+//                 switch(node.type) {
+//                 }
+//             }).filter(name => !_.isUndefined(name))
+//             // console.log(globals_to_output)
+//             var file_scope_line_number_ends = ast_before_current_line[ast_before_current_line.length-2].loc.start.line;
             
-            // TODO: actually build flowsheets fully using npm build command since other modules need to be imported
+//             // TODO: actually build flowsheets fully using npm build command since other modules need to be imported
 
-            var js = flowRemoveTypes(source.split('\n').slice(0, file_scope_line_number_ends).join('\n')).toString();
+//             var js = flowRemoveTypes(source.split('\n').slice(0, file_scope_line_number_ends).join('\n')).toString();
 
-            js_before_final_scope = `${js}
+//             js_before_final_scope = `${js}
 
-${fs.readFileSync('/Users/glen/code/REPLugger/node_modules/circular-json/build/circular-json.js').toString()}
-var replugger_output = {};
-${globals_to_output.map(name => `replugger_output.${name} = ${name};`).join('\n')}
-var replugger_replacer = function(key, value) {
-    if (_.isFunction(value)) {
-        return '[Function]'
-    }
-    return value;
-}
-fs.writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.stringify(replugger_output, replugger_replacer));
-process.stdout.write('ok')
-process.exit();`
+// ${fs.readFileSync('/Users/glen/code/REPLugger/node_modules/circular-json/build/circular-json.js').toString()}
+// var replugger_output = {};
+// ${globals_to_output.map(name => `replugger_output.${name} = ${name};`).join('\n')}
+// var replugger_replacer = function(key, value) {
+//     if (_.isFunction(value)) {
+//         return '[Function]'
+//     }
+//     return value;
+// }
+// fs.writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.stringify(replugger_output, replugger_replacer));
+// process.stdout.write('ok')
+// process.exit();`
 
-            console.log(js_before_final_scope)
+//             console.log(js_before_final_scope)
 
-            const { spawnSync } = require('child_process');
-            var sub_process = spawnSync('node', ['--eval', js_before_final_scope], {cwd: '/Users/glen/code/flowsheets2/build/'})
-            if (sub_process.stdout.toString() !== 'ok') {
-                console.log(sub_process.stderr.toString())
-            }
+//             const { spawnSync } = require('child_process');
+//             var sub_process = spawnSync('node', ['--eval', js_before_final_scope], {cwd: '/Users/glen/code/flowsheets2/build/'})
+//             if (sub_process.stdout.toString() !== 'ok') {
+//                 console.log(sub_process.stderr.toString())
+//             }
 
-            var values = CircularJSON.parse(fs.readFileSync('tmp.js').toString())
+//             var values = CircularJSON.parse(fs.readFileSync('tmp.js').toString())
 
-            const React = require('react');
-            const ReactDOM = require('react-dom');
 
             class Table extends React.Component {
                 render() {
@@ -572,7 +635,7 @@ process.exit();`
                 }
             }
 
-            ReactDOM.render(React.createElement(Table, {scope: values}), document.querySelector('#test'))
+            // ReactDOM.render(React.createElement(Table, {scope: values}), document.querySelector('#test'))
         </script>
     </body>
 </html>
