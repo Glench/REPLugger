@@ -52,6 +52,7 @@
             }
             #sidebar table {
                 width: 100%;
+                table-layout: auto;
             }
             #sidebar tbody td {
                 padding: 3px 0;
@@ -75,6 +76,7 @@
             #sidebar tbody td:nth-child(2) {
                 padding-left: 10px;
                 white-space: nowrap;
+                width: 100%; /* makes sure this column takes up as much space as it can */
             }
 
             #sidebar #current-line {
@@ -110,6 +112,7 @@
 
         </style>
         <link href="node_modules/codemirror/lib/codemirror.css" rel="stylesheet">
+        <link href="node_modules/codemirror/addon/dialog/dialog.css" rel="stylesheet">
 
         <!--
         <meta name="twitter:card" content="summary" />
@@ -212,6 +215,9 @@
         <script src="node_modules/codemirror/lib/codemirror.js"></script>
         <script src="node_modules/codemirror/mode/javascript/javascript.js"></script>
         <script src="node_modules/codemirror/addon/selection/active-line.js"></script>
+        <script src="node_modules/codemirror/addon/edit/matchbrackets.js"></script>
+        <script src="node_modules/codemirror/addon/search/searchcursor.js"></script>
+        <script src="node_modules/codemirror/addon/dialog/dialog.js"></script>
         <script src="node_modules/codemirror/keymap/vim.js"></script>
         <script src="node_modules/flow-parser/flow_parser.js" charset="utf-8"></script>
         <script type="text/javascript">
@@ -269,6 +275,9 @@
                 styleActiveLine: true,
                 indentUnit: 4,
                 keyMap: 'vim',
+                matchBrackets: true,
+                showCursorWhenSelecting: true,
+                inputStyle: 'contenteditable',
             });
             CodeMirror.Vim.map('jj', '<Esc>', 'insert')
 
@@ -280,14 +289,14 @@
             cursor_activity(main_editor)
 
 
-            var current_line_number = 0;
+            var current_line_number = 1; // 1-based
             function cursor_activity(instance) {
                 // don't change sidebar if user is highlighting
                 if (instance.getSelection()) {
                     return;
                 }
 
-                var line_number = instance.getCursor().line;
+                var line_number = instance.getCursor().line+1;
                 // line change
                 if (line_number !== current_line_number) {
                     current_line_number = line_number;
@@ -295,7 +304,7 @@
                     { // make scope table
                         const source = main_editor.getValue();
                         const ast_before_current_line = flow.parse(source.split('\n').slice(0, current_line_number).join('\n'));
-                        // console.log('ast', ast_before_current_line)
+                        console.log('ast up to current line', ast_before_current_line)
                         const scopes = ast_to_list_of_scopes(ast_before_current_line, 'file', current_line_number, instance.getValue(), [])
 
                         ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes}), document.querySelector('#test'))
@@ -385,89 +394,93 @@
             }
 
 
-            function ast_to_list_of_scopes(node, scope_name, current_line_number, src, output) {
-                // produce a list of scopes with variables in each scope:
-                // [
-                //    {name: 'file': names_in_scope: ['clamp']},
-                //    {name: 'function initialize_grid() {', names_in_scope: ['width', 'height']}]
-                // ]
+                function ast_to_list_of_scopes(node, scope_name, current_line_number, src, output) {
+                    // produce a list of scopes with variables in each scope:
+                    // [
+                    //    {name: 'file': names_in_scope: ['clamp']},
+                    //    {name: 'function initialize_grid() {', names_in_scope: ['width', 'height']}]
+                    // ]
 
-                var scope = {name: scope_name, names_in_scope: []}
+                    var scope = {name: scope_name, names_in_scope: []}
 
-                var nodes = null;
-                if (node.type == 'Program') {
-                    scope.names_in_scope.push('module')
-                    nodes = node.body;
-                } else if (node.type == 'FunctionDeclaration') {
-                    node.params.forEach(param => scope.names_in_scope.push(param.name))
-                    nodes = node.body.body;
-                } else if (node.type == 'BlockStatement') {
-                    nodes = node.body;
-                } else if (node.type == 'CallExpression') {
-                    nodes = node.arguments; //node.arguments[node.arguments.length-1].body;
-                } else if (node.type == 'IfStatement') {
-                    nodes = node.consequent.body;
-                }
-
-                if (!nodes) return output;
-
-                // find declarations 
-                nodes = nodes.filter(node => node.loc.start.line <= current_line_number);
-                nodes.forEach(node => {
-                    switch (node.type) {
-                        case 'VariableDeclaration':
-                            node.declarations.forEach(decl => {
-                                scope.names_in_scope.push(decl.id.name)
-                            })
-                            return;
-                        // case 'ExpressionStatement':
-                        //     return;
-                        case 'FunctionDeclaration':
-                        case 'ClassDeclaration':
-                            scope.names_in_scope.push(node.id.name);
-                            return;
-                        case 'FunctionExpression':
-                            node.params.forEach(param => {
-                                scope.names_in_scope.push(param.name);
-                            });
-                            return;
+                    var nodes = null;
+                    if (node.type == 'Program') {
+                        scope.names_in_scope.push('module')
+                        nodes = node.body;
+                    } else if (node.type == 'FunctionDeclaration') {
+                        node.params.forEach(param => scope.names_in_scope.push(param.name))
+                        nodes = node.body.body;
+                    } else if (node.type == 'BlockStatement') {
+                        nodes = node.body;
+                    } else if (node.type == 'CallExpression') {
+                        nodes = node.arguments; //node.arguments[node.arguments.length-1].body;
+                    } else if (node.type == 'IfStatement') {
+                        nodes = node.consequent.body;
                     }
-                })
 
-                if (scope.names_in_scope.length > 0) {
-                    output.push(scope);
-                }
+                    if (!nodes) return output;
 
-                const last_node = nodes[nodes.length-1];
-                if (!last_node) return output;
+                    // find declarations 
+                    nodes = nodes.filter(node => node.loc.start.line <= current_line_number);
+                    nodes.forEach(node => {
+                        switch (node.type) {
+                            case 'VariableDeclaration':
+                                node.declarations.forEach(decl => {
+                                    scope.names_in_scope.push(decl.id.name)
+                                })
+                                return;
+                            // case 'ExpressionStatement':
+                            //     return;
+                            case 'FunctionDeclaration':
+                            case 'ClassDeclaration':
+                                scope.names_in_scope.push(node.id.name);
+                                return;
+                            case 'FunctionExpression':
+                                node.params.forEach(param => {
+                                    scope.names_in_scope.push(param.name);
+                                });
+                                return;
+                        }
+                    })
 
-                var current_line_src = src.split('\n')[last_node.loc.start.line-1];
+                    if (scope.names_in_scope.length > 0) {
+                        output.push(scope);
+                    }
 
-                if        (last_node.type == 'FunctionDeclaration') {
-                    ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
-                } else if (last_node.type == 'ExpressionStatement') {
-                    ast_to_list_of_scopes(last_node.expression, current_line_src, current_line_number, src, output);
-                } else if (last_node.type == 'CallExpression') {
-                    ast_to_list_of_scopes(last_node.arguments[last_node.arguments.length-1], current_line_src, current_line_number, src, output);
-                } else if (last_node.type == 'IfStatement') {
-                    console.log(last_node.consequent.loc.start.line, current_line_number+1, last_node.consequent.loc.end.line, (last_node.consequent.loc.end.line > current_line_number+1 && last_node.consequent.loc.start.line < current_line_number+1))
-                    console.log(last_node)
-                    if (!last_node.alternate || (last_node.consequent.loc.end.line > current_line_number+1 && last_node.consequent.loc.start.line < current_line_number+1)) {
-                        ast_to_list_of_scopes(last_node.consequent, src.split('\n')[last_node.consequent.loc.start.line-1], current_line_number, src, output);
+                    const last_node = nodes[nodes.length-1];
+                    if (!last_node) return output;
+
+                    var current_line_src = src.split('\n')[last_node.loc.start.line-1];
+
+                    console.log(last_node.type)
+
+                    if        (last_node.type == 'FunctionDeclaration') {
+                        ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
+                    } else if (last_node.type == 'ExpressionStatement') {
+                        ast_to_list_of_scopes(last_node.expression, current_line_src, current_line_number, src, output);
+                    } else if (last_node.type == 'CallExpression') {
+                        ast_to_list_of_scopes(last_node.arguments[last_node.arguments.length-1], current_line_src, current_line_number, src, output);
+                    } else if (last_node.type == 'IfStatement') {
+                        // find which branch of the if statement contains the current line
+                        var test_node = last_node;
+                        while (true) {
+                            if (test_node.consequent.loc.start.line <= current_line_number && test_node.consequent.loc.end.line >= current_line_number) {
+                                break
+                            }
+                            test_node = test_node.alternate;
+                        }
+                        ast_to_list_of_scopes(test_node, src.split('\n')[test_node.loc.start.line-1], current_line_number, src, output);
+                    } else if (last_node.type == 'FunctionExpression') {
+                        ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
+                    } else if (last_node.type == 'BlockStatement') {
+                        ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
                     } else {
-                        ast_to_list_of_scopes(last_node.alternate, src.split('\n')[last_node.alternate.loc.start.line-1], current_line_number, src, output);
+                        // console.log('error-causing node:', last_node)
+                        // throw 'unhandled AST node type: '+last_node.type;
                     }
-                } else if (last_node.type == 'FunctionExpression') {
-                    ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
-                } else if (last_node.type == 'BlockStatement') {
-                    ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
-                } else {
-                    // console.log('error-causing node:', last_node)
-                    // throw 'unhandled AST node type: '+last_node.type;
-                }
 
-                return output;
-            }
+                    return output;
+                }
 
 
             function ast_to_html(node) {
