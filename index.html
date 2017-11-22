@@ -584,7 +584,6 @@
                     var output = '';
                     nodes.forEach(node => {
                         if (node.loc.end.line == current_line_number && node.loc.start.line == current_line_number) {
-                            console.log(node, scopes)
                             output += `${fs.readFileSync('/Users/glen/code/REPLugger/node_modules/circular-json/build/circular-json.js').toString()}
 replugger_values = {};
 replugger_replacer = function(key, value) {
@@ -607,6 +606,16 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                     case 'Program':
                         return ast_node_to_js(node.body, scopes);
                     case 'ExpressionStatement':
+                        if (node.loc.start.line < current_line_number && node.loc.end.line >= current_line_number) {
+                            var block;
+                            // find the part of this expression that the cursor is in
+                            if (node.expression.type == 'CallExpression') {
+                                block = node.expression.arguments[node.expression.arguments.length-1];
+                            }
+                            return `{ // function as argument
+    ${ast_node_to_js(block, scopes)}
+}` 
+                        }
                         return ast_node_to_js(node.expression, scopes);
                     case 'ClassDeclaration':
                         return `class ${ast_node_to_js(node.id, scopes)} ${ast_node_to_js(node.body, scopes)}`;
@@ -631,6 +640,19 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                         });
                         return output;
                     case 'IfStatement':
+                        if (node.loc.start.line <= current_line_number && node.loc.end.line >= current_line_number) {
+                            // find which branch the cursor is in
+                            var test_node = node;
+                            while (test_node.type == 'IfStatement') {
+                                if (test_node.consequent.loc.start.line <= current_line_number && test_node.consequent.loc.end.line >= current_line_number) {
+                                    break
+                                }
+                                test_node = test_node.alternate;
+                            }
+                            return `// if ${ast_node_to_js(test_node.test, scopes)}
+    ${ast_node_to_js(test_node.consequent, scopes)}
+`
+                        }
                         var else_clause = '';
                         if (node.alternate) {
                             else_clause = `else ${ast_node_to_js(node.alternate, scopes)}`
@@ -674,7 +696,7 @@ ${ast_node_to_js(node.body, scopes)}
                         }
                     case 'FunctionDeclaration':
                         if (node.loc.start.line <= current_line_number && node.loc.end.line >= current_line_number) {
-                            return `{
+                            return `{ // function ${ast_node_to_js(node.id, scopes)}
 ${node.params.map(param => `var ${param.name} = null;`).join('\n')}
 ${ast_node_to_js(node.body, scopes)}
 }`
