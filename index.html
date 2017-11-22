@@ -309,6 +309,7 @@
                         const scopes = ast_to_list_of_scopes(ast_before_current_line, 'file', current_line_number, instance.getValue(), [])
 
                         var mock_js = ast_node_to_js(ast_before_current_line, scopes);
+                        console.log(mock_js)
 
                         // var sub_process = spawnSync('node', ['--eval', mock_js], {cwd: '/Users/glen/code/flowsheets2/build/'})
                         // if (sub_process.stdout.toString() !== 'ok') {
@@ -323,6 +324,7 @@
 
                 { // show the values of the current line
                     $('#sidebar #current-line h2').text('Line '+(current_line_number))
+                    return
 
                     var current_line_src = instance.getLine(current_line_number-1);
                     var current_line_ast = flow.parse(current_line_src);
@@ -624,7 +626,7 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                             if (i !== node.declarations.length-1) {
                                 output += ',\n'
                             } else {
-                                output += ';\n'
+                                output += ';'
                             }
                         });
                         return output;
@@ -647,30 +649,44 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                         return `var ${node.id.name} = ${ast_node_to_js(node.init, scopes)}`;
                     case 'NewExpression':
                         var arguments_str = '';
-                        node.arguments.forEach(arg => {
-                            arguments_str += ast_node_to_js(arg, scopes)+',';
+                        node.arguments.forEach((arg,i) => {
+                            arguments_str += ast_node_to_js(arg, scopes)+ (i == node.arguments.length-1 ? '' : ', ');
                         })
                         return `new ${ast_node_to_js(node.callee, scopes)}(${arguments_str})`;
                     case 'CallExpression':
                         var arguments_str = '';
-                        node.arguments.forEach(arg => {
-                            arguments_str += ast_node_to_js(arg, scopes)+',';
+                        node.arguments.forEach((arg,i) => {
+                            arguments_str += ast_node_to_js(arg, scopes)+ (i == node.arguments.length-1 ? '' : ', ');
                         })
                         return `${ast_node_to_js(node.callee, scopes)}(${arguments_str})`;
                     case 'FunctionExpression':
-                        var params_str = '';
-                        node.params.forEach(param => {
-                            params_str += ast_node_to_js(param, scopes)+',';
-                        })
-                        return `${node.async ? 'async ':''} (${params_str}) ${ast_node_to_js(node.body, scopes)}`;
+                        if (node.loc.start.line <= current_line_number && node.loc.end.line >= current_line_number) {
+                            return `{
+${node.params.map(param => `var ${param.name} = null;`).join('\n')}
+${ast_node_to_js(node.body, scopes)}
+}`
+                        } else {
+                            var params_str = '';
+                            node.params.forEach((param,i) => {
+                                params_str += ast_node_to_js(param, scopes)+ (i == node.params.length-1 ? '' : ', ');
+                            })
+                            return `${node.async ? 'async ':''} function(${params_str}) ${ast_node_to_js(node.body, scopes)}`;
+                        }
                     case 'FunctionDeclaration':
-                        var params_str = '';
-                        node.params.forEach(param => {
-                            params_str += ast_node_to_js(param, scopes)+',';
-                        })
-                        return `${node.async ? 'async ':''}function ${ast_node_to_js(node.id, scopes)}(${params_str}) ${ast_node_to_js(node.body, scopes)}`;
+                        if (node.loc.start.line <= current_line_number && node.loc.end.line >= current_line_number) {
+                            return `{
+${node.params.map(param => `var ${param.name} = null;`).join('\n')}
+${ast_node_to_js(node.body, scopes)}
+}`
+                        } else {
+                            var params_str = '';
+                            node.params.forEach((param,i) => {
+                                params_str += ast_node_to_js(param, scopes)+ (i == node.params.length-1 ? '' : ', ');
+                            })
+                            return `${node.async ? 'async ':''}function ${ast_node_to_js(node.id, scopes)}(${params_str}) ${ast_node_to_js(node.body, scopes)}`;
+                        }
                     case 'ForStatement':
-                        return `for (${ast_node_to_js(node.init, scopes)}; ${ast_node_to_js(node.test, scopes)}; ${ast_node_to_js(node.update, scopes)}) ${ast_node_to_js(node.body, scopes)}`
+                        return `for (${ast_node_to_js(node.init, scopes)} ${ast_node_to_js(node.test, scopes)}; ${ast_node_to_js(node.update, scopes)}) ${ast_node_to_js(node.body, scopes)}`
                     case 'ReturnStatement':
                         return `return ${node.argument ? ast_node_to_js(node.argument, scopes) : ''};`
                     case 'UnaryExpression':
