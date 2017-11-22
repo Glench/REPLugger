@@ -413,11 +413,13 @@
 
                 var scope = {name: scope_name, names_in_scope: []}
 
+
+
                 var nodes = null;
                 if (node.type == 'Program') {
                     scope.names_in_scope.push('module')
                     nodes = node.body;
-                } else if (node.type == 'FunctionDeclaration') {
+                } else if (node.type == 'FunctionDeclaration' || node.type == 'FunctionExpression') {
                     node.params.forEach(param => scope.names_in_scope.push(param.name))
                     nodes = node.body.body;
                 } else if (node.type == 'BlockStatement') {
@@ -430,25 +432,26 @@
 
                 if (!nodes) return output;
 
+
                 // find declarations 
-                nodes = nodes.filter(node => node.loc.start.line <= current_line_number);
-                nodes.forEach(node => {
-                    switch (node.type) {
+                nodes = nodes.filter(decl => decl.loc.start.line <= current_line_number);
+                nodes.forEach(decl => {
+                    switch (decl.type) {
                         case 'VariableDeclaration':
-                            node.declarations.forEach(decl => {
-                                scope.names_in_scope.push(decl.id.name)
+                            decl.declarations.forEach(inner_decl => {
+                                scope.names_in_scope.push(inner_decl.id.name)
                             })
                             return;
                         // case 'ExpressionStatement':
                         //     return;
-                        case 'FunctionDeclaration':
                         case 'ClassDeclaration':
-                            scope.names_in_scope.push(node.id.name);
+                            scope.names_in_scope.push(decl.id.name);
                             return;
+                        case 'FunctionDeclaration':
                         case 'FunctionExpression':
-                            node.params.forEach(param => {
-                                scope.names_in_scope.push(param.name);
-                            });
+                            if (decl.id) {
+                                scope.names_in_scope.push(decl.id.name)
+                            }
                             return;
                     }
                 })
@@ -462,8 +465,9 @@
 
                 var current_line_src = src.split('\n')[last_node.loc.start.line-1];
 
-                if        (last_node.type == 'FunctionDeclaration') {
-                    ast_to_list_of_scopes(last_node.body, current_line_src, current_line_number, src, output);
+                if        (last_node.type == 'FunctionDeclaration' || last_node.type == 'FunctionExpression') {
+
+                    ast_to_list_of_scopes(last_node, current_line_src, current_line_number, src, output);
                 } else if (last_node.type == 'ExpressionStatement') {
                     ast_to_list_of_scopes(last_node.expression, current_line_src, current_line_number, src, output);
                 } else if (last_node.type == 'CallExpression') {
@@ -668,7 +672,7 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                     case 'ForStatement':
                         return `for (${ast_node_to_js(node.init, scopes)}; ${ast_node_to_js(node.test, scopes)}; ${ast_node_to_js(node.update, scopes)}) ${ast_node_to_js(node.body, scopes)}`
                     case 'ReturnStatement':
-                        return `return ${ast_node_to_js(node.argument, scopes)};`
+                        return `return ${node.argument ? ast_node_to_js(node.argument, scopes) : ''};`
                     case 'UnaryExpression':
                         return `${node.operator} ${ast_node_to_js(node.argument, scopes)}`
                     case 'BinaryExpression':
