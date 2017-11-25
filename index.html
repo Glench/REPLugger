@@ -26,7 +26,7 @@
                 background-color: #ace0ff;
             }
             #main-editor {
-                width: 63%;
+                width: 60%;
                 display: inline-block;
                 vertical-align: top;
             }
@@ -38,6 +38,13 @@
                 font-family: Courier;
                 vertical-align: top;
                 padding: 5px;
+            }
+            #sidebar input {
+                background-color: transparent;
+                border: 0;
+                width: 100%;
+                font-family: Courier;
+                font-size: 13px;
             }
             #sidebar h2 {
                 background-color: #ace0ff;
@@ -236,6 +243,56 @@
                 return (new Function( "with(this) { return " + scr + "}")).call(context);
             }
 
+
+            var current_line_number = 120; // 1-based
+            var variable_overrides = {} // key: line number, value: {} key: name, value: line to run
+            var scope_values = {}; // values of all variables in different scopes returned from mock environment
+
+
+            class Value extends React.Component {
+                constructor(props) {
+                    super(props);
+                    this.state = {editing: false, value: value_to_string(props.value)}
+                    this.edit = this.edit.bind(this);
+                    this.change = this.change.bind(this);
+                    this.blur = this.blur.bind(this);
+                    this.keydown = this.keydown.bind(this);
+                }
+                change(evt) {
+                    this.setState({value: evt.target.value})
+                }
+                edit(evt) {
+                    this.setState({editing: true})
+                }
+                blur(evt) {
+                    if (!variable_overrides[current_line_number]) {
+                        variable_overrides[current_line_number] = {}
+                    }
+                    this.setState({editing: false})
+                    variable_overrides[current_line_number][this.props.name] = evt.target.value;
+                    run_and_render();
+                }
+                keydown(evt) {
+                    if (evt.which == 13) {
+                        if (!variable_overrides[current_line_number]) {
+                            variable_overrides[current_line_number] = {}
+                        }
+                        this.setState({editing: false})
+                        variable_overrides[current_line_number][this.props.name] = evt.target.value;
+                        run_and_render();
+                    }
+                }
+                render() {
+                    return React.createElement('input', {
+                        value: this.state.value,
+                        readOnly: !this.state.editing,
+                        onChange: this.change,
+                        onDoubleClick: this.edit,
+                        // onBlur: this.blur,
+                        onKeyDown: this.keydown,
+                    })
+                }
+            }
             class ScopeTable extends React.Component {
                 update_height() {
                     setTimeout(function() {
@@ -260,7 +317,7 @@
                             scope.names_in_scope.map(name => {
                                 return React.createElement('tr', {key: name}, [
                                     React.createElement('td', {key: name+' name'}, name),
-                                    React.createElement('td', {key: name+' value'}, '...')
+                                    React.createElement('td', {key: name+' value'}, React.createElement(Value, {name: name, value: this.props.values[name]})),
                                 ])
                             })
                         )
@@ -283,14 +340,40 @@
             CodeMirror.Vim.map('jj', '<Esc>', 'insert')
 
             $('.CodeMirror').height($(window).height())
-            main_editor.setCursor({line: 201, ch: 20})
+            main_editor.setCursor({line: current_line_number, ch: 20})
             main_editor.refresh()
 
             main_editor.on('cursorActivity', cursor_activity);
             cursor_activity(main_editor)
 
 
-            var current_line_number = 1; // 1-based
+
+            function run_and_render() {
+                const source = main_editor.getValue();
+                const ast_before_current_line = flow.parse(source.split('\n').slice(0, current_line_number).join('\n'));
+                console.log('ast up to current line', ast_before_current_line)
+                const scopes = ast_to_list_of_scopes(ast_before_current_line, 'file', current_line_number, source, [])
+
+                var mock_js = ast_node_to_js(ast_before_current_line, scopes);
+                console.log(mock_js)
+
+                var sub_process = spawnSync('node', ['--eval', mock_js], {cwd: '/Users/glen/code/flowsheets2/build/'})
+                var err = sub_process.stdout.toString();
+                if (err) {
+                    var error_line_number = parseInt(err.split('\n')[1].split(':')[1], 10)
+                    $('.current-line-expansion').html(`<pre>Error on line ${error_line_number-1}: ${mock_js.split('\n')[error_line_number-1]}
+${err}</pre>`)
+                }
+                console.log('error running script:', sub_process.stderr.toString())
+                // if (sub_process.stdout.toString() !== 'ok') {
+                //     console.log(sub_process.stderr.toString())
+                // }
+                var values = CircularJSON.parse(fs.readFileSync('tmp.js').toString())
+                scope_values = values;
+
+                ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes, values: values}), document.querySelector('#test'))
+            }
+
             function cursor_activity(instance) {
                 // don't change sidebar if user is highlighting
                 if (instance.getSelection()) {
@@ -302,30 +385,12 @@
                 if (line_number !== current_line_number) {
                     current_line_number = line_number;
 
-                    { // make scope table
-                        const source = main_editor.getValue();
-                        const ast_before_current_line = flow.parse(source.split('\n').slice(0, current_line_number).join('\n'));
-                        console.log('ast up to current line', ast_before_current_line)
-                        const scopes = ast_to_list_of_scopes(ast_before_current_line, 'file', current_line_number, instance.getValue(), [])
-
-                        var mock_js = ast_node_to_js(ast_before_current_line, scopes);
-                        console.log(mock_js)
-
-                        // var sub_process = spawnSync('node', ['--eval', mock_js], {cwd: '/Users/glen/code/flowsheets2/build/'})
-                        // if (sub_process.stdout.toString() !== 'ok') {
-                        //     console.log(sub_process.stderr.toString())
-                        // }
-
-                        // var values = CircularJSON.parse(fs.readFileSync('tmp.js').toString())
-
-                        ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes}), document.querySelector('#test'))
-                    }
+                    $('#sidebar #current-line h2').text('Line '+(current_line_number))
+                    run_and_render();
                 }
 
                 { // show the values of the current line
-                    $('#sidebar #current-line h2').text('Line '+(current_line_number))
                     return
-
                     var current_line_src = instance.getLine(current_line_number-1);
                     var current_line_ast = flow.parse(current_line_src);
                     console.log("current line's ast:", current_line_ast)
@@ -338,32 +403,8 @@
                     // write html to page
                     $('#sidebar .current-line-expansion').html('<div class="current-line">'+html_ast+'</div>')
 
-                    var fake_scope_for_now = {
-                        rows: 300,
-                        columns: 30,
-                        width: 2640,
-                        height: 5700,
-                        new_columns: 2,
-                        resize_drag: {
-                            original_width_in_columns: 1
-                        },
-                        clamp: function(num, min, max) {
-                            if (num < min) {
-                                return min;
-                            } else if (num > max) {
-                                return max
-                            }
-                            return num;
-                        },
-
-                        dy: 20,
-                        dx: 20,
-                        cell_width: 88,
-                        cell_height: 19,
-                    }
-
                     if (current_line_ast.body.length > 0) {
-                        $('.interpreted-line').html(evaluate_html_ast(document.querySelector('.current-line span'), fake_scope_for_now))
+                        $('.interpreted-line').html(evaluate_html_ast(document.querySelector('.current-line span'), scope_values))
                     } else {
                         $('.interpreted-line').html('');
                     }
@@ -415,8 +456,6 @@
 
                 var scope = {name: scope_name, names_in_scope: []}
 
-
-
                 var nodes = null;
                 if (node.type == 'Program') {
                     scope.names_in_scope.push('module')
@@ -464,6 +503,9 @@
 
                 const last_node = nodes[nodes.length-1];
                 if (!last_node) return output;
+                if (last_node.loc.start.line == current_line_number && last_node.loc.end.line == current_line_number) {
+                    return output;
+                } 
 
                 var current_line_src = src.split('\n')[last_node.loc.start.line-1];
 
@@ -538,6 +580,13 @@
                 if (_.isFunction(value)) {
                     return value;
                 }
+                if (_.isNull(value)) {
+                    return 'null';
+                }
+                if (_.isUndefined(value)) {
+                    return '...'
+                }
+
                 if (_.isObject(value)) {
                     var str = '{'
                     _.each(value, (val, key) => {
@@ -585,13 +634,6 @@
                     nodes.forEach(node => {
                         if (node.loc.end.line == current_line_number && node.loc.start.line == current_line_number) {
                             output += `${fs.readFileSync('/Users/glen/code/REPLugger/node_modules/circular-json/build/circular-json.js').toString()}
-replugger_values = {};
-replugger_replacer = function(key, value) {
-    if (_.isFunction(value)) {
-        return '[Function]'
-    }
-    return value;
-}
 ${scopes.map(scope => {
     return scope.names_in_scope.map(name => `replugger_values['${name}'] = ${name}`).join('\n')
 }).join('\n')}
@@ -604,17 +646,35 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                 }
                 switch (node.type) {
                     case 'Program':
-                        return ast_node_to_js(node.body, scopes);
+                        return `replugger_values = {};
+replugger_replacer = function(key, value) {
+    if (_.isFunction(value)) {
+        return '[Function]'
+    }
+    return value;
+}
+try {
+    ${ast_node_to_js(node.body, scopes)}
+} catch (e) {
+    console.log(e)
+    ${fs.readFileSync('/Users/glen/code/REPLugger/node_modules/circular-json/build/circular-json.js').toString()}
+    try {
+        ${scopes.map(scope => {
+            return scope.names_in_scope.map(name => `replugger_values['${name}'] = ${name}`).join('\n')
+        }).join('\n')}
+    } catch (e_) {}
+    require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.stringify(replugger_values, replugger_replacer));
+}
+process.exit();`
                     case 'ExpressionStatement':
                         if (node.loc.start.line < current_line_number && node.loc.end.line >= current_line_number) {
-                            var block;
+                            var test_node = node.expression;
                             // find the part of this expression that the cursor is in
-                            if (node.expression.type == 'CallExpression') {
-                                block = node.expression.arguments[node.expression.arguments.length-1];
+                            while (test_node.type == 'CallExpression') {
+                                test_node = test_node.arguments[test_node.arguments.length-1];
                             }
-                            return `{ // function as argument
-    ${ast_node_to_js(block, scopes)}
-}` 
+                            return `// function as argument
+    ${ast_node_to_js(test_node, scopes)}`
                         }
                         return ast_node_to_js(node.expression, scopes);
                     case 'ClassDeclaration':
@@ -622,7 +682,7 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                     case 'ClassProperty':
                         return ``;
                     case 'MethodDefinition':
-                        return `${ast_node_to_js(node.key, scopes)} ${ast_node_to_js(node.value, scopes)}`;
+                        return `${ast_node_to_js(node.key, scopes)}(${node.value.params.map(param => param.name).join(', ')}) ${ast_node_to_js(node.value.body, scopes)}`;
                     case 'ClassBody':
                     case 'BlockStatement':
                         return `{
@@ -650,7 +710,7 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                                 test_node = test_node.alternate;
                             }
                             return `// if ${ast_node_to_js(test_node.test, scopes)}
-    ${ast_node_to_js(test_node.consequent, scopes)}
+    ${ast_node_to_js(test_node.consequent.body, scopes)}
 `
                         }
                         var else_clause = '';
@@ -659,6 +719,8 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                         }
 
                         return `if (${ast_node_to_js(node.test, scopes)}) ${ast_node_to_js(node.consequent, scopes)} ${else_clause}`;
+                    case 'ConditionalExpression':
+                        return `${ast_node_to_js(node.test, scopes)} ? ${ast_node_to_js(node.consequent, scopes)} : ${ast_node_to_js(node.alternate, scopes)}`
                     case 'AssignmentExpression':
                         return `${ast_node_to_js(node.left, scopes)} ${node.operator} ${ast_node_to_js(node.right, scopes)}`;
                     case 'MemberExpression':
@@ -668,6 +730,9 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                             return `${ast_node_to_js(node.object, scopes)}.${ast_node_to_js(node.property, scopes)}`
                         }
                     case 'VariableDeclarator':
+                        if (variable_overrides[current_line_number] && node.id.name in variable_overrides[current_line_number]) {
+                            return `var ${node.id.name} = ${variable_overrides[current_line_number][node.id.name]}`;
+                        }
                         return `var ${node.id.name} = ${ast_node_to_js(node.init, scopes)}`;
                     case 'NewExpression':
                         var arguments_str = '';
@@ -684,7 +749,7 @@ require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.st
                     case 'FunctionExpression':
                         if (node.loc.start.line <= current_line_number && node.loc.end.line >= current_line_number) {
                             return `{
-${node.params.map(param => `var ${param.name} = null;`).join('\n')}
+${node.params.map(param => `var ${param.name} = ${variable_overrides[current_line_number] ? variable_overrides[current_line_number][param.name] : 'null'};`).join('\n')}
 ${ast_node_to_js(node.body, scopes)}
 }`
                         } else {
@@ -697,6 +762,9 @@ ${ast_node_to_js(node.body, scopes)}
                     case 'FunctionDeclaration':
                         if (node.loc.start.line <= current_line_number && node.loc.end.line >= current_line_number) {
                             return `{ // function ${ast_node_to_js(node.id, scopes)}
+// first declare function ${ast_node_to_js(node.id, scopes)} so it can be called
+${node.async ? 'async ':''}function ${ast_node_to_js(node.id, scopes)}(${node.params.map(param => ast_node_to_js(param, scopes).join(', '))}) ${ast_node_to_js(node.body, scopes)};
+// then mock up inside of function ${ast_node_to_js(node.id, scopes)}
 ${node.params.map(param => `var ${param.name} = null;`).join('\n')}
 ${ast_node_to_js(node.body, scopes)}
 }`
@@ -707,6 +775,8 @@ ${ast_node_to_js(node.body, scopes)}
                             })
                             return `${node.async ? 'async ':''}function ${ast_node_to_js(node.id, scopes)}(${params_str}) ${ast_node_to_js(node.body, scopes)}`;
                         }
+                    case 'ArrowFunctionExpression':
+                        return `(${node.params.map(param => ast_node_to_js(param, scopes)).join(', ')}) => ${ast_node_to_js(node.body, scopes)}`
                     case 'ForStatement':
                         return `for (${ast_node_to_js(node.init, scopes)} ${ast_node_to_js(node.test, scopes)}; ${ast_node_to_js(node.update, scopes)}) ${ast_node_to_js(node.body, scopes)}`
                     case 'ReturnStatement':
@@ -721,6 +791,10 @@ ${ast_node_to_js(node.body, scopes)}
                             return `${node.operator}${ast_node_to_js(node.argument, scopes)}`;
                         }
                         return `${ast_node_to_js(node.argument, scopes)}${node.operator}`;
+                    case 'TryStatement':
+                        return `try ${ast_node_to_js(node.block, scopes)} ${ast_node_to_js(node.handler, scopes)}`
+                    case 'CatchClause':
+                        return `catch(${node.param.name || ''}) ${ast_node_to_js(node.body, scopes)}`
                     case 'ArrayExpression':
                         var output = '';
                         node.elements.forEach(element => {
@@ -730,15 +804,24 @@ ${ast_node_to_js(node.body, scopes)}
                             }
                         })
                         return `[${output}]`
+                    case 'ObjectExpression':
+                        return `{${node.properties.map(prop => ast_node_to_js(prop, scopes))}}`
+                    case 'Property':
+                        return `${ast_node_to_js(node.key, scopes)}: ${ast_node_to_js(node.value, scopes)}`
                     case 'Identifier':
                         return node.name;
                     case 'ThisExpression':
                         return 'this';
+                    case 'TemplateLiteral':
+                        return '`'+ ast_node_to_js(node.quasis, scopes) + '`'
+                    case 'TemplateElement':
+                        return node.value.raw;
                     case 'Literal':
                         return node.raw;
                     case 'EmptyStatement':
                         return ''
                     default:
+                        console.log(node)
                         return '!!!UH OH!!!'
                 }
             }
