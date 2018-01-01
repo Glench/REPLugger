@@ -235,7 +235,7 @@
             const ReactDOM = require('react-dom');
             const CircularJSON = require('circular-json');
             const flowRemoveTypes = require('flow-remove-types');
-            const { spawnSync } = require('child_process');
+            const { spawn, spawnSync } = require('child_process');
 
 
             function evalInContext(scr, context) {
@@ -244,7 +244,7 @@
             }
 
 
-            var current_line_number = 120; // 1-based
+            var current_line_number = 1; // 1-based
             var variable_overrides = {} // key: line number, value: {} key: name, value: line to run
             var scope_values = {}; // values of all variables in different scopes returned from mock environment
 
@@ -340,7 +340,8 @@
             CodeMirror.Vim.map('jj', '<Esc>', 'insert')
 
             $('.CodeMirror').height($(window).height())
-            main_editor.setCursor({line: current_line_number, ch: 20})
+            current_line_number = 177
+            main_editor.setCursor({line: current_line_number-1, ch: 0})
             main_editor.refresh()
 
             main_editor.on('cursorActivity', cursor_activity);
@@ -348,21 +349,155 @@
 
 
 
+
+            // set up mock environment server
+            // server takes requests in the form of straight-line code to run
+            // server returns the values in different scopes
+
+
+            var source = main_editor.getValue();
+            var ast = flow.parse(source);
+            var scopes = ast_to_list_of_scopes(ast, 'file', current_line_number, source, [])
+            var file_scope_names_to_track = scopes[0].names_in_scope;
+
+            var mock_js = `replugger_original = {};
+// START of REPLUGGER ORIGINAL FILE
+${flowRemoveTypes(main_editor.getValue())}
+// /END OF REPLUGGER ORIGINAL FILE
+
+// REPLUGGER RECORD VALUES AFTER RUNNING FILE
+${file_scope_names_to_track.map(name => `replugger_original['${name}'] = ${name};`).join('\n')}
+// END REPLUGGER RECORD VALUES AFTER RUNNING FILE
+
+// REPLUGGER SERVER
+var buffer = [];
+process.stdin.setEncoding('utf-8');
+const CircularJSON = require('/Users/glen/code/REPLugger/node_modules/circular-json/build/circular-json.node.js')
+process.stdin.on('data', function(data) {
+    data = data.toString();
+    /*
+     expect things to come in in this format:
+        (function() {
+
+            try {
+                // un-nested user code 
+
+                const replugger_values = {};
+                try { replugger_values['x'] = x; } catch(e) { replugger_values['x'] = '...'}
+                try { replugger_values['y'] = y; } catch(e) { replugger_values['y'] = '...'}
+                try { replugger_values['z'] = z; } catch(e) { replugger_values['z'] = '...'}
+
+                // line the user's cursor is on
+
+                return {error: null, values: replugger_values, current_line_subexpressions: [{src: '...', value: 42, subexpressions: []}]}
+            } catch(e) {
+                const replugger_values = {};
+                try { replugger_values['x'] = x; } catch(e) { replugger_values['x'] = '...'}
+                try { replugger_values['y'] = y; } catch(e) { replugger_values['y'] = '...'}
+                try { replugger_values['z'] = z; } catch(e) { replugger_values['z'] = '...'}
+
+                return {error: e, values: replugger_values, current_line_subexpressions: []} 
+            }
+        }())__END__
+    */
+    
+    if (!data.includes('__END__')) {
+        buffer.push(data)
+    } else {
+        var end_of_command, start_of_next;
+        [end_of_command, start_of_next] = data.split('__END__'); // @Robustness: what happens when the buffer splits __END__ up, e.g. __E ND__
+        if (start_of_next) {
+            buffer = [start_of_next]
+        } else {
+            buffer.push(end_of_command);
+            var output = eval(buffer.join(''));
+            buffer = [];
+            process.stdout.write(CircularJSON.stringify(output, (key,value) => (typeof value === 'function' ? value.prototype : value)))
+            process.stdout.write('__END__')
+        }
+    }
+})
+// END REPLUGGER SERVER
+`;
+
+            console.log(mock_js)
+            var mock_environment_server = spawn('node', ['--eval', mock_js], {cwd: '/Users/glen/code/flowsheets2/build/'});
+            mock_environment_server.stdin.setEncoding('utf-8')
+            mock_environment_server.stdout.setEncoding('utf-8')
+            var buffer = [];
+            mock_environment_server.stdout.on('data', function(data) {
+                data = data.toString();
+                if (data.includes('__END__')) {
+                    buffer.push(data.split('__END__')[0])
+                    console.log('BUFFER DATA!!!!!!!!!!', buffer)
+                    console.log('output from js mock server:', CircularJSON.parse(buffer.join('')))
+                    buffer = []
+                } else {
+                    buffer.push(data)
+                }
+            })
+            mock_environment_server.stderr.on('data', function(data) { console.log('error in mock environment:', data.toString())})
+            mock_environment_server.on('exit', function() { console.log('mock environment process ended!')})
+
+            process.on('exit', function() { mock_environment_server.kill('SIGKILL') });
+            window.onbeforeunload = function (e) {
+                mock_environment_server.kill('SIGKILL');
+            };
+
+
+
+            function test_mock_server() {
+                var test = `
+                    (function() {
+                        try {
+                            const underscore = require('underscore');
+                            var x = underscore.find([1,2,3,4], x => x % 2 == 0)
+                            var y = [2,1,3]
+                            y.sort();
+
+                            var replugger_values = {};
+                            try { replugger_values['underscore'] = underscore; } catch(e) { replugger_values['underscore'] = '...'}
+                            try { replugger_values['x'] = x; } catch(e) { replugger_values['x'] = '...'}
+                            try { replugger_values['y'] = y; } catch(e) { replugger_values['y'] = '...'}
+
+                            return {error: null, values: replugger_values, current_line_subexpressions: []}
+                        } catch(e) {
+                            var replugger_values = {};
+                            try { replugger_values['underscore'] = underscore; } catch(e) { replugger_values['underscore'] = '...'}
+                            try { replugger_values['x'] = x; } catch(e) { replugger_values['x'] = '...'}
+                            try { replugger_values['y'] = y; } catch(e) { replugger_values['y'] = '...'}
+
+                            return {error: e, values: replugger_values, current_line_subexpressions: []} 
+                        }
+                    }())__END__`;
+
+                mock_environment_server.stdin.write(test)
+            }
+
+
+
             function run_and_render() {
+                console.time('parse')
                 const source = main_editor.getValue();
                 const ast_before_current_line = flow.parse(source.split('\n').slice(0, current_line_number).join('\n'));
                 console.log('ast up to current line', ast_before_current_line)
                 const scopes = ast_to_list_of_scopes(ast_before_current_line, 'file', current_line_number, source, [])
 
                 var mock_js = ast_node_to_js(ast_before_current_line, scopes);
-                console.log(mock_js)
+                console.timeEnd('parse')
+                // console.log(mock_js)
 
+                console.time('subprocess')
                 var sub_process = spawnSync('node', ['--eval', mock_js], {cwd: '/Users/glen/code/flowsheets2/build/'})
+                console.timeEnd('subprocess')
+
                 var err = sub_process.stdout.toString();
                 if (err) {
                     var error_line_number = parseInt(err.split('\n')[1].split(':')[1], 10)
-                    $('.current-line-expansion').html(`<pre>Error on line ${error_line_number-1}: ${mock_js.split('\n')[error_line_number-1]}
+                    $('.current-line-expansion').html(`<pre>Error on this line: ${mock_js.split('\n')[error_line_number-1]}
 ${err}</pre>`)
+                    console.log(`Error on this line: ${mock_js.split('\n')[error_line_number-1]}
+${err}`)
                 }
                 console.log('error running script:', sub_process.stderr.toString())
                 // if (sub_process.stdout.toString() !== 'ok') {
@@ -381,16 +516,25 @@ ${err}</pre>`)
                 }
 
                 var line_number = instance.getCursor().line+1;
+                $('#sidebar #current-line h2').text('Line '+(line_number))
                 // line change
                 if (line_number !== current_line_number) {
                     current_line_number = line_number;
-
-                    $('#sidebar #current-line h2').text('Line '+(current_line_number))
-                    run_and_render();
                 }
 
+                { // send straight-line code to server
+                    let source = instance.getValue();
+                    let ast = flow.parse(source)
+                    let scopes = ast_to_list_of_scopes(ast, 'file', current_line_number, source, []).slice(1)
+                    let cursor_in_node = _.find(ast.body, node => node.loc.start.line <= current_line_number && node.loc.end.line >= current_line_number);
+                    let mock_js = ast_node_to_js(cursor_in_node, scopes)
+
+                    console.log(mock_js)
+                }
+
+                return
+
                 { // show the values of the current line
-                    return
                     var current_line_src = instance.getLine(current_line_number-1);
                     var current_line_ast = flow.parse(current_line_src);
                     console.log("current line's ast:", current_line_ast)
@@ -631,41 +775,27 @@ ${err}</pre>`)
                 if (!node.type) { // array of nodes
                     var nodes = node;
                     var output = '';
+                    var done = false;
                     nodes.forEach(node => {
-                        if (node.loc.end.line == current_line_number && node.loc.start.line == current_line_number) {
-                            output += `${fs.readFileSync('/Users/glen/code/REPLugger/node_modules/circular-json/build/circular-json.js').toString()}
-${scopes.map(scope => {
-    return scope.names_in_scope.map(name => `replugger_values['${name}'] = ${name}`).join('\n')
-}).join('\n')}
-require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.stringify(replugger_values, replugger_replacer));
-`
+                        if (done) { return; }
+                        if (scopes && node.loc.end.line == current_line_number && node.loc.start.line == current_line_number) {
+                            output += `replugger_values = {};\n${scopes.map(scope => { return scope.names_in_scope.map(name => `try { replugger_values['${name}'] = ${name} } catch(e) { replugger_values['${name}'] = '...' }`).join('\n')}).join('\n')}\n${ast_node_to_js(node, scopes)}`
+                            done = true;
+                            return 
                         }
                         output += ast_node_to_js(node, scopes)+'\n'
                     })
-                    return output;
+                    return output; 
                 }
                 switch (node.type) {
                     case 'Program':
-                        return `replugger_values = {};
-replugger_replacer = function(key, value) {
-    if (_.isFunction(value)) {
-        return '[Function]'
-    }
-    return value;
-}
-try {
+                        return `try {
     ${ast_node_to_js(node.body, scopes)}
 } catch (e) {
-    console.log(e)
-    ${fs.readFileSync('/Users/glen/code/REPLugger/node_modules/circular-json/build/circular-json.js').toString()}
-    try {
-        ${scopes.map(scope => {
-            return scope.names_in_scope.map(name => `replugger_values['${name}'] = ${name}`).join('\n')
-        }).join('\n')}
-    } catch (e_) {}
-    require('fs').writeFileSync('/Users/glen/code/REPLugger/tmp.js', CircularJSON.stringify(replugger_values, replugger_replacer));
+    replugger_values = {};
+    ${scopes.map(scope => { return scope.names_in_scope.map(name => `try { replugger_values['${name}'] = ${name} } catch(e) { replugger_values['${name}'] = '...' }`).join('\n')}).join('\n')}
 }
-process.exit();`
+`
                     case 'ExpressionStatement':
                         if (node.loc.start.line < current_line_number && node.loc.end.line >= current_line_number) {
                             var test_node = node.expression;
@@ -762,9 +892,6 @@ ${ast_node_to_js(node.body, scopes)}
                     case 'FunctionDeclaration':
                         if (node.loc.start.line <= current_line_number && node.loc.end.line >= current_line_number) {
                             return `{ // function ${ast_node_to_js(node.id, scopes)}
-// first declare function ${ast_node_to_js(node.id, scopes)} so it can be called
-${node.async ? 'async ':''}function ${ast_node_to_js(node.id, scopes)}(${node.params.map(param => ast_node_to_js(param, scopes).join(', '))}) ${ast_node_to_js(node.body, scopes)};
-// then mock up inside of function ${ast_node_to_js(node.id, scopes)}
 ${node.params.map(param => `var ${param.name} = null;`).join('\n')}
 ${ast_node_to_js(node.body, scopes)}
 }`
