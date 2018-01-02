@@ -345,7 +345,7 @@
             main_editor.refresh()
 
             main_editor.on('cursorActivity', cursor_activity);
-            cursor_activity(main_editor)
+            // cursor_activity(main_editor)
 
 
 
@@ -430,8 +430,13 @@ process.stdin.on('data', function(data) {
                 if (data.includes('__END__')) {
                     buffer.push(data.split('__END__')[0])
                     console.log('BUFFER DATA!!!!!!!!!!', buffer)
-                    console.log('output from js mock server:', CircularJSON.parse(buffer.join('')))
+
+                    var data = CircularJSON.parse(buffer.join(''))
                     buffer = []
+                    console.log('output from js mock server:', data);
+
+                    ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes, values: data.values}), document.querySelector('#test'))
+
                 } else {
                     buffer.push(data)
                 }
@@ -451,13 +456,13 @@ process.stdin.on('data', function(data) {
                     (function() {
                         try {
                             const underscore = require('underscore');
-                            var x = underscore.find([1,2,3,4], x => x % 2 == 0)
+                            var dx = underscore.find([1,2,3,4], x => x % 2 == 0)
                             var y = [2,1,3]
                             y.sort();
 
                             var replugger_values = {};
                             try { replugger_values['underscore'] = underscore; } catch(e) { replugger_values['underscore'] = '...'}
-                            try { replugger_values['x'] = x; } catch(e) { replugger_values['x'] = '...'}
+                            try { replugger_values['dx'] = dx; } catch(e) { replugger_values['dx'] = '...'}
                             try { replugger_values['y'] = y; } catch(e) { replugger_values['y'] = '...'}
 
                             return {error: null, values: replugger_values, current_line_subexpressions: []}
@@ -527,9 +532,18 @@ ${err}`)
                     let ast = flow.parse(source)
                     let scopes = ast_to_list_of_scopes(ast, 'file', current_line_number, source, []).slice(1)
                     let cursor_in_node = _.find(ast.body, node => node.loc.start.line <= current_line_number && node.loc.end.line >= current_line_number);
-                    let mock_js = ast_node_to_js(cursor_in_node, scopes)
+                    let straight_js = ast_node_to_js(cursor_in_node, scopes)
 
-                    console.log(mock_js)
+                    let mock_js = `(function () {
+    try ${straight_js}
+    catch (e) {
+        replugger_values = {};
+        ${scopes.map(scope => { return scope.names_in_scope.map(name => `try { replugger_values['${name}'] = ${name} } catch(e) { replugger_values['${name}'] = '...' }`).join('\n')}).join('\n')}
+        return {error: e, values: replugger_values, current_line_subexpressions: []}
+    }
+}())__END__`;
+
+                    mock_environment_server.stdin.write(mock_js)
                 }
 
                 return
