@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en-US" prefix="og: http://ogp.me/ns#">
+
+    <head>
+        <title></title>
+        <style type="text/css">
+            html, body {
+                margin: 0;
+                padding: 0;
+                font-size: 13px;
+                font-family: Helvetica, Arial, sans-serif;
+                line-height: 1;
+            }
+            table {
+                border-collapse: collapse;
+                border-spacing: none;
+            }
+            p {
+                margin: 0;
+            }
+
+            .CodeMirror {
+                border: 1px solid #ccc;
+            }
+            .CodeMirror .CodeMirror-activeline-background {
+                background-color: #ace0ff;
+            }
+            #main-editor {
+                width: 60%;
+                display: inline-block;
+                vertical-align: top;
+            }
+            #main-editor .CodeMirror {
+            }
+            #sidebar {
+                width: 36%;
+                display: inline-block;
+                font-family: Courier;
+                vertical-align: top;
+                padding: 5px;
+            }
+            #sidebar input {
+                background-color: transparent;
+                border: 0;
+                width: 100%;
+                font-family: Courier;
+                font-size: 13px;
+            }
+            #sidebar h2 {
+                background-color: #ace0ff;
+                color: black;
+                padding: 4px 10px;
+            }
+            #test {
+                overflow: auto;
+            }
+            #sidebar #test {
+                border: 1px solid #ddd;
+            }
+            #sidebar table {
+                width: 100%;
+                table-layout: auto;
+            }
+            #sidebar tbody td {
+                padding: 3px 0;
+            }
+            #sidebar tbody tr:nth-child(even) td {
+               background-color: #eee;
+            }
+            #sidebar thead th {
+                text-align: left;
+                padding: 3px 5px;
+                background-color: #d2d2d2;
+                color: black;
+                border-bottom: 1px solid #9e9e9e;
+            }
+            #sidebar tbody td {
+                padding-left: 5px;
+            }
+            #sidebar tbody td:nth-child(2) {
+                padding-left: 10px;
+                white-space: nowrap;
+                width: 100%; /* makes sure this column takes up as much space as it can */
+            }
+
+            #sidebar #current-line {
+                position: absolute;
+                bottom: 0;
+                background-color: white;
+                width: 36%;
+                padding-bottom: 20px;
+            }
+            #sidebar .current-line-expansion {
+                font-size: 14px;
+                white-space: nowrap;
+            }
+            #sidebar .interpreted-line div {
+                display: inline-block;
+                vertical-align: top;
+            }
+            #sidebar .interpreted-line div[data] {
+                margin: 1px 0;
+                background-color: #ddd;
+                text-align: center;
+                border: 1px solid #aaa;
+                border-width: 0 1px;
+                overflow: hidden;
+                white-space: nowrap;
+                overflow: auto;
+            }
+            #sidebar .interpreted-line div[data].hover,
+            #sidebar .current-line span.hover
+            {
+                background-color: #8ee5ff;
+            }
+
+        </style>
+        <link href="node_modules/codemirror/lib/codemirror.css" rel="stylesheet">
+        <link href="node_modules/codemirror/addon/dialog/dialog.css" rel="stylesheet">
+
+        <!--
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:site" content="@glenchsite" />
+        <meta name="twitter:creator" content="@glench" />
+        <meta property="og:type" content="article" />
+        <meta property="og:url" content="http://glench.com/DeepListeningAtTheRecurseCenter/" />
+        <meta property="og:title" content="Deep Listening at the Recurse Center" />
+        <meta property="og:description" content="Helping programmers become more self-directed through meditative listening." />
+        <meta property="og:image" content="http://glench.com/DeepListeningAtTheRecurseCenter/icon.png" />
+        -->
+
+    </head>
+    <body>
+        <div id="main-editor"></div>
+
+        <div id="sidebar">
+        </div>
+
+        <script src="node_modules/jquery/dist/jquery.js"></script>
+        <script src="node_modules/underscore/underscore.js"></script>
+        <script src="node_modules/codemirror/lib/codemirror.js"></script>
+        <script src="node_modules/codemirror/mode/javascript/javascript.js"></script>
+        <script src="node_modules/codemirror/addon/selection/active-line.js"></script>
+        <script src="node_modules/codemirror/addon/edit/matchbrackets.js"></script>
+        <script src="node_modules/codemirror/addon/search/searchcursor.js"></script>
+        <script src="node_modules/codemirror/addon/dialog/dialog.js"></script>
+        <script src="node_modules/codemirror/keymap/vim.js"></script>
+        <script src="node_modules/flow-parser/flow_parser.js" charset="utf-8"></script>
+        <script type="text/javascript">
+
+            const $ = require('jquery');
+            const fs = require('fs');
+            const {prepare_current_file_to_act_as_server} = require('./mock_environment')
+            const {dialog} = require('electron').remote;
+            const exec = require('child_process').exec;
+
+
+            // --- set up editor ---
+
+            var current_file_name = 'renderer.js';
+            main_editor = CodeMirror(document.querySelector('#main-editor'), {
+                value: fs.readFileSync('/Users/glen/code/flowsheets2/src/'+current_file_name, 'utf-8').toString(),
+                mode: 'javascript',
+                lineNumbers: true,
+                styleActiveLine: true,
+                indentUnit: 4,
+                keyMap: 'vim',
+                matchBrackets: true,
+                showCursorWhenSelecting: true,
+                inputStyle: 'contenteditable',
+            });
+            CodeMirror.Vim.map('jj', '<Esc>', 'insert')
+
+            $('.CodeMirror').height($(window).height() - 2)
+            main_editor.refresh() // for some reason only shows few lines
+
+            // main_editor.on('cursorActivity', cursor_activity);
+
+
+            // TODO: get command+o working
+            // https://github.com/electron/electron/blob/master/docs/api/dialog.md
+
+
+
+            // --- build project and get mock server running ---
+
+
+            // build initially, also as person types changes to file since they may create a new name as they type.
+            // could be smart about seeing if there's a new name, but parsing names is time-consuming I believe 
+            function build(current_file_src) {
+                // 0. prepare special version of edited file, with server code / recorded values
+                // 1. remove all files in staging area (except .babelrc), then copy other files to staging area, 'staged_src'
+                // 2. run "compilation", `babel staged_src/ --out-dir mock_environment`
+                // 3. report error if compilation failed, line number may be tricky
+
+                var mock_environment_server_src = prepare_current_file_to_act_as_server(current_file_src)
+                var yourscript = exec('sh build_mock_environment.sh',
+                    (error, stdout, stderr) => {
+                        console.log('stdout', stdout);
+                        console.log('stderr', stderr);
+                        if (error !== null) {
+                            console.log(`exec error: ${error}`);
+                            return
+                        }
+
+                        fs.writeFile(`staged_src/${current_file_name}`, mock_environment_server_src, function() {
+                            exec('sh compile.sh',
+                                (error, stdout, stderr) => {
+                                    console.log('stdout', stdout);
+                                    console.log('stderr', stderr);
+                                    if (error !== null) {
+                                        console.log(`exec error: ${error}`);
+                                        return
+                                    }
+                                })
+                        });
+                    });
+            }
+            build(main_editor.getValue());
+
+            function run_mock_environment_server() {
+                // 1. run specially-prepared file in step build().0, e.g. `node renderer.js`
+            }
+
+            function on_typing() {
+                // throttled probably
+
+                // on new line (?) recompute names to look for
+                // send 'straight-line' code to server that can be run sequentially, from top of file to the line the cursor is on
+                // if error, report the error, line number can be tricky
+                // ask for summary values of all names
+            }
+
+
+
+
+        </script>
+    </body>
+</html>

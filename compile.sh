@@ -1,0 +1,1 @@
+babel . --out-dir ../mock_environment/
