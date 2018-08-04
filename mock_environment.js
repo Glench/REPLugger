@@ -2,17 +2,71 @@ const parse_flow_src = require('flow-parser');
 const flow_remove_types = require('flow-remove-types');
 
 
-function prepare_current_file_to_act_as_server(file_src) {
+function prepare_current_file_to_act_as_server(file_src, names_of_interest) {
     var server_src = `console.log('server would be running here')`
-    var mock_server_src = `${flow_remove_types(file_src)}
+    var mock_server_src = `${file_src}
 
 /* ----- REPLUGGER MOCK SERVER ----- */
 
-${server_src}
+const circular_json = require('circular-json');
+function replugger_json_replacer(key, value) {
+    if (typeof value === 'function') {
+        return typeof value //.toString();
+    } 
+    return value;
+}
+var replugger_output = {
+    ${names_of_interest.map(name => `${name}: circular_json.stringify(${name}, replugger_json_replacer).slice(0, 100)`).join(',\n')}
+}
+process.stdout.write(circular_json.stringify(replugger_output));
+process.exit();
 `
     return mock_server_src;
 }
 module.exports.prepare_current_file_to_act_as_server = prepare_current_file_to_act_as_server;
+
+function scopes_and_names(file_src, line_number) {
+    var scopes = [];
+    /* e.g.
+        [
+            {scope_name: 'function (evt) {',
+             line_number: 102,
+             names_in_scope: ['evt', 'dx', 'dy'],
+             fill_in_names: ['evt'],
+            }
+        ]
+    */
+
+    var lines = file_src.split('\n');
+    var scope_stack = [{scope_name: 'file', line_number: null, names_in_scope: []}];
+    for (var i = 0; i < lines.length; ++i) {
+        if (i >= line_number-1) {
+            return scope_stack;
+        }
+
+        var line = lines[i].trim();
+        if (line.startsWith('const ') || line.startsWith('var ')) {
+            var name = line.split('=')[0].replace(/(const|var)/g, '').trim();
+            scope_stack[scope_stack.length-1].names_in_scope.push(name)
+        // } else if (line.startsWith('function') && scope_stack.length == 1) {
+        //     // defining global function
+        } else if (line.startsWith('class ') && scope_stack.length == 1) {
+            var name = line.replace(/ \{.*/, '').replace('class ', '')
+            scope_stack[0].names_in_scope.push(name);
+        } else if (line.startsWith('function ') && scope_stack.length == 1) {
+            var name = line.replace(/\(.*\) \{.*/, '').replace('function ', '');
+            scope_stack[0].names_in_scope.push(name);
+        } else if (line.startsWith('}')) {
+            if (scope_stack.length > 1) {
+                scope_stack.pop();
+            }
+        }
+        if (line.endsWith('{')) {
+            scope_stack.push({scope_name: line, line_number: i+1, names_in_scope: []})
+        }
+    }
+}
+module.exports.scopes_and_names = scopes_and_names;
 
 function ast_to_list_of_scopes(node, scope_name, current_line_number, src, output) {
     // produce a list of scopes with variable names in each scope:

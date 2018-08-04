@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Flowsheets v2</title>
+
+    <!-- for more production-ready, use static css below -->
+    <!-- <link type="text/css" href="style.css" /> -->
+    <style></style> <!-- don't delete this! -->
+
+    <link rel="stylesheet" href="../node_modules/codemirror/lib/codemirror.css" />
+    <script>
+      const less = require('less');
+      const fs = require('fs');
+
+      // hotload less files for (relatively) instantaneous style changes
+      function recompile_css() {
+        // @Cleanup @Speed reading the file and recompiling every second is probably hella slow,
+        // but hot-loading style changes is hella tight.
+        less.render(fs.readFileSync(__dirname+'/../src/style.less').toString(), function(e, cssObj) {
+          if (e) throw e;
+          var currentCss = document.querySelector('style').innerText
+          if (currentCss !== cssObj.css) {
+            document.querySelector('style').innerText = cssObj.css;
+          }
+        })
+      }
+
+      recompile_css();
+      setInterval(recompile_css, 1000)
+    </script>
+
+
+  </head>
+  <body>
+    <div id="imports">
+    </div>
+    <button id="new-import">new import</button>
+
+    <div id="blocks">
+      <canvas id="main"></canvas>
+    </div>
+
+    <div id="sidebar" style="width: 10px;">
+      <a href="#null" id="collapse">+</a>
+    </div>
+
+    <script>
+      const ui = require('./renderer.js')
+      const interpreter = require('./interpreter.js')
+      const $ = require('jquery')
+
+      ui.initialize();
+
+      var block = interpreter.create_block('a', '1+1');
+
+      ui.create_and_render_block(block, 0,0);
+
+
+      // make sure to kill the python process or else it will keep running after electron exits
+      process.on('exit', () => {
+          interpreter.python_interpreter.kill('SIGKILL')
+      })
+      window.onbeforeunload = function (e) {
+          interpreter.WARN_ON_CLOSE = false;
+          interpreter.python_interpreter.kill('SIGKILL')
+      };
+
+    </script>
+  </body>
+
+</html>

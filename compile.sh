@@ -1,1 +1,1 @@
-babel . --out-dir ../mock_environment/
+cd staged_src/ && babel . --out-dir ../mock_environment/ && cp interpreter.py ../mock_environment/

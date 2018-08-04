@@ -150,7 +150,7 @@
 
             const $ = require('jquery');
             const fs = require('fs');
-            const {prepare_current_file_to_act_as_server} = require('./mock_environment')
+            const {scopes_and_names, prepare_current_file_to_act_as_server} = require('./mock_environment')
             const {dialog} = require('electron').remote;
             const exec = require('child_process').exec;
 
@@ -159,7 +159,7 @@
 
             var current_file_name = 'renderer.js';
             main_editor = CodeMirror(document.querySelector('#main-editor'), {
-                value: fs.readFileSync('/Users/glen/code/flowsheets2/src/'+current_file_name, 'utf-8').toString(),
+                value: fs.readFileSync('/Users/glen/code/REPLugger/staged_src/'+current_file_name, 'utf-8').toString(),
                 mode: 'javascript',
                 lineNumbers: true,
                 styleActiveLine: true,
@@ -174,7 +174,13 @@
             $('.CodeMirror').height($(window).height() - 2)
             main_editor.refresh() // for some reason only shows few lines
 
-            // main_editor.on('cursorActivity', cursor_activity);
+            main_editor.on('cursorActivity', cursor_activity);
+            function cursor_activity(codemirror_instance) {
+                var line_number = codemirror_instance.getCursor().line+1;
+                build(codemirror_instance.getValue(), line_number)
+                // var scopes = scopes_and_names(codemirror_instance.getValue(), line_number)
+                // console.log('scopes: ', `${scopes.map(scope => `'${scope.scope_name}':\n    ${scope.names_in_scope.join('    \n')}\n`).join('\n\n')}`)
+            }
 
 
             // TODO: get command+o working
@@ -187,36 +193,56 @@
 
             // build initially, also as person types changes to file since they may create a new name as they type.
             // could be smart about seeing if there's a new name, but parsing names is time-consuming I believe 
-            function build(current_file_src) {
+            function build(current_file_src, line_number) {
                 // 0. prepare special version of edited file, with server code / recorded values
                 // 1. remove all files in staging area (except .babelrc), then copy other files to staging area, 'staged_src'
                 // 2. run "compilation", `babel staged_src/ --out-dir mock_environment`
                 // 3. report error if compilation failed, line number may be tricky
 
-                var mock_environment_server_src = prepare_current_file_to_act_as_server(current_file_src)
+                var scopes = scopes_and_names(current_file_src, line_number);
+                console.time('prepare')
+                var mock_environment_server_src = prepare_current_file_to_act_as_server(current_file_src, scopes[0].names_in_scope)
+                console.timeEnd('prepare')
+                console.log(mock_environment_server_src)
+
+                console.time('build')
                 var yourscript = exec('sh build_mock_environment.sh',
                     (error, stdout, stderr) => {
-                        console.log('stdout', stdout);
-                        console.log('stderr', stderr);
-                        if (error !== null) {
-                            console.log(`exec error: ${error}`);
-                            return
-                        }
+                        // console.log('stdout', stdout);
+                        // console.log('stderr', stderr);
+                        // if (error !== null) {
+                        //     console.log(`exec error: ${error}`);
+                        //     return
+                        // }
 
-                        fs.writeFile(`staged_src/${current_file_name}`, mock_environment_server_src, function() {
-                            exec('sh compile.sh',
+                        fs.writeFile(`mock_environment/${current_file_name}`, mock_environment_server_src, function() {
+                            exec(`cd mock_environment && node ${current_file_name}`,
                                 (error, stdout, stderr) => {
                                     console.log('stdout', stdout);
+                                    console.log(JSON.parse(stdout))
                                     console.log('stderr', stderr);
+                                    console.timeEnd('build')
                                     if (error !== null) {
                                         console.log(`exec error: ${error}`);
                                         return
                                     }
-                                })
+                                }
+                            )
                         });
                     });
             }
-            build(main_editor.getValue());
+            build(main_editor.getValue(), 1);
+
+            const Mousetrap = require('mousetrap');
+            Mousetrap.bind('command+s', () => { console.log('building...'); build(main_editor.getValue())} )
+
+            const {Menu, MenuItem} = require('electron').remote;
+            var menu = new Menu();
+            menu.append(new MenuItem({
+                label: 'Build',
+                accelerator: 'CmdOrCtrl+S',
+                click: () => { build(main_editor.getValue(), main_editor.getCursor().line+1) }
+            }))
 
             function run_mock_environment_server() {
                 // 1. run specially-prepared file in step build().0, e.g. `node renderer.js`
