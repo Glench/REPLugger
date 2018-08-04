@@ -174,7 +174,7 @@
             $('.CodeMirror').height($(window).height() - 2)
             main_editor.refresh() // for some reason only shows few lines
 
-            main_editor.on('cursorActivity', cursor_activity);
+            main_editor.on('cursorActivity', _.debounce(cursor_activity, 200));
             function cursor_activity(codemirror_instance) {
                 var line_number = codemirror_instance.getCursor().line+1;
                 build(codemirror_instance.getValue(), line_number)
