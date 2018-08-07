@@ -153,6 +153,7 @@
             const {scopes_and_names, prepare_current_file_to_act_as_server} = require('./mock_environment')
             const {dialog} = require('electron').remote;
             const exec = require('child_process').exec;
+            const {spawn, spawnSync} = require('child_process')
 
 
             // --- set up editor ---
@@ -177,15 +178,17 @@
             main_editor.on('cursorActivity', _.debounce(cursor_activity, 200));
             function cursor_activity(codemirror_instance) {
                 var line_number = codemirror_instance.getCursor().line+1;
-                build(codemirror_instance.getValue(), line_number)
-                // var scopes = scopes_and_names(codemirror_instance.getValue(), line_number)
-                // console.log('scopes: ', `${scopes.map(scope => `'${scope.scope_name}':\n    ${scope.names_in_scope.join('    \n')}\n`).join('\n\n')}`)
+                run(codemirror_instance.getValue(), line_number)
             }
 
             // NEXT STEPS:
+            //    1. separate comms on stdout by delimter (or use writeSync to pipe if there is one) so can get all values of interest back
+            //
             //    - handle errors in runtime
             //    - generate straight-line code
             //    - evaluate by pieces current line
+            //    - better scope detection
+            //       - add filled_in_names in scope detection
             //    - keep server online with functionality:
             //       - ask for more details about an object (like chrome inspector clicking arrow)
             //       - send straight-line code to run (will this work?)
@@ -202,20 +205,19 @@
 
             // build initially, also as person types changes to file since they may create a new name as they type.
             // could be smart about seeing if there's a new name, but parsing names is time-consuming I believe 
-            function build(current_file_src, line_number) {
+            var mock_server = null;
+            success_callbacks = [];
+            error_callbacks = [];
+            function build(current_file_src) {
                 // 0. prepare special version of edited file, with server code / recorded values
                 // 1. remove all files in staging area (except .babelrc), then copy other files to staging area, 'staged_src'
                 // 2. run "compilation", `babel staged_src/ --out-dir mock_environment`
                 // 3. report error if compilation failed, line number may be tricky
-
-                var scopes = scopes_and_names(current_file_src, line_number);
-                console.time('prepare')
+                console.log('building...')
+                var scopes = scopes_and_names(current_file_src, current_file_src.split('\n').length-1);
                 var mock_environment_server_src = prepare_current_file_to_act_as_server(current_file_src, scopes[0].names_in_scope)
-                console.timeEnd('prepare')
-                console.log(mock_environment_server_src)
 
-                console.time('build')
-                var yourscript = exec('sh build_mock_environment.sh',
+                var build_command = exec('sh build_mock_environment.sh',
                     (error, stdout, stderr) => {
                         // console.log('stdout', stdout);
                         // console.log('stderr', stderr);
@@ -224,26 +226,58 @@
                         //     return
                         // }
 
+
+                        // overwrite file the user is currently editing with a special one that runs a server we can query for data
                         fs.writeFile(`mock_environment/${current_file_name}`, mock_environment_server_src, function() {
-                            exec(`cd mock_environment && node ${current_file_name}`,
-                                (error, stdout, stderr) => {
-                                    console.log('stdout', stdout);
-                                    console.log('stderr', stderr);
-                                    console.log(JSON.parse(stdout))
-                                    console.timeEnd('build')
-                                    if (error !== null) {
-                                        console.log(`exec error: ${error}`);
-                                        return
-                                    }
+                            if (mock_server) {
+                                mock_server.kill('SIGKILL');
+                            }
+                            mock_server = spawn('node', [current_file_name], {cwd: '/Users/glen/code/REPLugger/mock_environment/'});
+                            mock_server.stdout.setEncoding('utf-8')
+                            mock_server.stdout.on('data', function(buffer) {
+                                console.log('DATA FROM SERVER!', buffer.toString())
+                            })
+
+                            mock_server.stderr.on('data', function(buffer) { 
+                                // TODO: write this to UI in place of debugger values
+                                var data = buffer.toString();
+                                if (!data.startsWith('Warning:')) {
+                                    console.log('error in mock environment:', data.toString())
                                 }
-                            )
+                            })
+                            mock_server.on('exit', function() { 
+                                console.log('mock environment process ended!')
+                                mock_server = null;
+                            })
+
+
                         });
                     });
             }
-            build(main_editor.getValue(), 1);
+            build(main_editor.getValue());
+
+            function run(current_file_src, line_number) {
+                console.log('running...')
+                if (!mock_server) {
+                    console.error('no mock server detected! aborting')
+                    return
+                }
+
+                var scopes = scopes_and_names(current_file_src, line_number);
+                scopes.forEach(function(scope) {
+                    scope.names_in_scope.forEach(get_summary)
+                })
+            }
+            function get_summary(name, success_callback, error_callback) {
+                success_callbacks.push(success_callback);
+                error_callbacks.push(error_callback);
+                console.log(name)
+                mock_server.stdin.write(`replugger_summary_info: ${name}`)
+            }
 
             const Mousetrap = require('mousetrap');
-            Mousetrap.bind('command+s', () => { console.log('building...'); build(main_editor.getValue())} )
+            // Mousetrap.bind('command+g', () => { run(main_editor.getValue(), main_editor.getCursor().line+1)})
+            Mousetrap.bind('command+b', () => { build(main_editor.getValue())} )
 
             const {Menu, MenuItem} = require('electron').remote;
             var menu = new Menu();

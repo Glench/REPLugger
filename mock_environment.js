@@ -8,7 +8,7 @@ function prepare_current_file_to_act_as_server(file_src, names_of_interest) {
 
 /* ----- REPLUGGER MOCK SERVER ----- */
 
-const circular_json = require('circular-json');
+const replugger_circular_json = require('circular-json');
 function replugger_json_replacer(key, value) {
     if (typeof value === 'function') {
         return typeof value //.toString();
@@ -16,10 +16,29 @@ function replugger_json_replacer(key, value) {
     return value;
 }
 var replugger_output = {
-    ${names_of_interest.map(name => `${name}: circular_json.stringify(${name}, replugger_json_replacer).slice(0, 100)`).join(',\n')}
+    ${names_of_interest.map(name => `${name}: replugger_circular_json.stringify(${name}, replugger_json_replacer).slice(0, 100)`).join(',\n')}
 }
-process.stdout.write(circular_json.stringify(replugger_output));
-process.exit();
+process.stdin.setEncoding('utf-8')
+process.stdin.on('data', function(buffer) {
+    var data = buffer.toString();
+    if (data.startsWith('replugger_summary_info:')) {
+        var name = data.replace(/^replugger_summary_info:/, '');
+        process.stdout.write(replugger_circular_json.stringify(eval(name), replugger_json_replacer).slice(0, 100))
+    } else if (data.startsWith('replugger_full_info:')) {
+        var name = data.replace(/^replugger_full_info:/, '');
+        process.stdout.write(replugger_circular_json.stringify(eval(name), replugger_json_replacer))
+    } else if (data.startsWith('replugger_run_code:')) {
+        var code = data.replace(/^replugger_run_code:/, '');
+        try {
+            eval(code);
+            process.stdout.write('ok')
+        } catch(e) {
+            process.stderr.write(e.message)
+        }
+    }
+});
+process.stdout.setEncoding('utf-8')
+// process.stdout.write(replugger_circular_json.stringify(replugger_output));
 `
     return mock_server_src;
 }
@@ -53,6 +72,11 @@ function scopes_and_names(file_src, line_number) {
         } else if (line.startsWith('class ') && scope_stack.length == 1) {
             var name = line.replace(/ \{.*/, '').replace('class ', '')
             scope_stack[0].names_in_scope.push(name);
+        } else if (line.includes('this.') || line.includes('this,')) {
+            var current_scope_stack = scope_stack[scope_stack.length-1];
+            if (!current_scope_stack.names_in_scope.includes('this')) {
+                current_scope_stack.names_in_scope.push('this')
+            }
         } else if (line.startsWith('function ') && scope_stack.length == 1) {
             var name = line.replace(/\(.*\) \{.*/, '').replace('function ', '');
             scope_stack[0].names_in_scope.push(name);
