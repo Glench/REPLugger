@@ -20,25 +20,28 @@ var replugger_output = {
 }
 process.stdin.setEncoding('utf-8')
 process.stdin.on('data', function(buffer) {
-    var data = buffer.toString();
-    if (data.startsWith('replugger_summary_info:')) {
-        var name = data.replace(/^replugger_summary_info:/, '');
-        process.stdout.write(replugger_circular_json.stringify(eval(name), replugger_json_replacer).slice(0, 100))
-    } else if (data.startsWith('replugger_full_info:')) {
-        var name = data.replace(/^replugger_full_info:/, '');
-        process.stdout.write(replugger_circular_json.stringify(eval(name), replugger_json_replacer))
-    } else if (data.startsWith('replugger_run_code:')) {
-        var code = data.replace(/^replugger_run_code:/, '');
-        try {
-            eval(code);
-            process.stdout.write('ok')
-        } catch(e) {
-            process.stderr.write(e.message)
+    var lines = buffer.toString().split('\\n');
+    for (var i = 0; i < lines.length; ++i) {
+        var data = lines[i];
+        if (data.startsWith('replugger_summary_info:')) {
+            var name = data.replace(/^replugger_summary_info:/, '');
+            process.stdout.write(replugger_circular_json.stringify(eval(name), replugger_json_replacer).slice(0, 100)+'\\n')
+        } else if (data.startsWith('replugger_full_info:')) {
+            var name = data.replace(/^replugger_full_info:/, '');
+            process.stdout.write(replugger_circular_json.stringify(eval(name), replugger_json_replacer)+'\\n')
+        } else if (data.startsWith('replugger_run_code:')) {
+            var code = data.replace(/^replugger_run_code:/, '');
+            try {
+                eval(code);
+                process.stdout.write('ok\\n')
+            } catch(e) {
+                process.stderr.write(e.message+'\\n')
+            }
         }
     }
 });
 process.stdout.setEncoding('utf-8')
-// process.stdout.write(replugger_circular_json.stringify(replugger_output));
+process.stdout.write('ok\\n');
 `
     return mock_server_src;
 }

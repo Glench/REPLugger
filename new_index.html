@@ -155,6 +155,13 @@
             const exec = require('child_process').exec;
             const {spawn, spawnSync} = require('child_process')
 
+            function assert(condition) {
+                if (!condition) {
+                    throw 'Assertion failed!'
+                }
+            }
+
+
 
             // --- set up editor ---
 
@@ -182,11 +189,9 @@
             }
 
             // NEXT STEPS:
-            //    1. separate comms on stdout by delimter (or use writeSync to pipe if there is one) so can get all values of interest back
-            //
-            //    - handle errors in runtime
+            //    - evaluate current line
+            //    - evaluate current line in pieces
             //    - generate straight-line code
-            //    - evaluate by pieces current line
             //    - better scope detection
             //       - add filled_in_names in scope detection
             //    - keep server online with functionality:
@@ -206,14 +211,20 @@
             // build initially, also as person types changes to file since they may create a new name as they type.
             // could be smart about seeing if there's a new name, but parsing names is time-consuming I believe 
             var mock_server = null;
-            success_callbacks = [];
-            error_callbacks = [];
+            success_callback_queue = [];
+            error_callback_queue = [];
+            $(window).on('beforeunload', function() {
+                console.log('killing!')
+                mock_server.kill()
+            });
+
             function build(current_file_src) {
                 // 0. prepare special version of edited file, with server code / recorded values
                 // 1. remove all files in staging area (except .babelrc), then copy other files to staging area, 'staged_src'
                 // 2. run "compilation", `babel staged_src/ --out-dir mock_environment`
                 // 3. report error if compilation failed, line number may be tricky
                 console.log('building...')
+                console.time('build');
                 var scopes = scopes_and_names(current_file_src, current_file_src.split('\n').length-1);
                 var mock_environment_server_src = prepare_current_file_to_act_as_server(current_file_src, scopes[0].names_in_scope)
 
@@ -232,17 +243,50 @@
                             if (mock_server) {
                                 mock_server.kill('SIGKILL');
                             }
+
+                            success_callback_queue.push(function(data) {
+                                console.log('building done')
+                                console.timeEnd('build')
+                            })
+                            error_callback_queue.push(function(data) {
+                                console.error('error starting mock environment:', data)
+                            })
+
                             mock_server = spawn('node', [current_file_name], {cwd: '/Users/glen/code/REPLugger/mock_environment/'});
+
                             mock_server.stdout.setEncoding('utf-8')
                             mock_server.stdout.on('data', function(buffer) {
-                                console.log('DATA FROM SERVER!', buffer.toString())
+                                var lines = buffer.toString().split('\n');
+                                for (var i = 0; i < lines.length; ++i) {
+                                    var data = lines[i];
+                                    if (!data) {
+                                        if (i != lines.length-1) { console.error('got an unexpected blank line in the middle of stdout', lines) }
+                                        return
+                                    }
+                                    assert(success_callback_queue.length > 0 && error_callback_queue.length > 0)
+                                    var success = success_callback_queue.shift();
+                                    error_callback_queue.shift();
+                                    success(data);
+                                }
                             })
 
                             mock_server.stderr.on('data', function(buffer) { 
-                                // TODO: write this to UI in place of debugger values
-                                var data = buffer.toString();
-                                if (!data.startsWith('Warning:')) {
-                                    console.log('error in mock environment:', data.toString())
+                                var raw = buffer.toString();
+                                if (raw.startsWith('Warning')) {
+                                    return
+                                }
+                                var lines = raw.split('\n');
+                                for (var i = 0; i < lines.length; ++i) {
+                                    var data = lines[i];
+                                    if (!data) {
+                                        if (i != lines.length-1) { console.error('got an unexpected blank line in the middle of stderr:', lines) }
+                                        return
+                                    }
+                                    assert(success_callback_queue.length > 0 && error_callback_queue.length > 0)
+
+                                    var error = error_callback_queue.shift();
+                                    success_callback_queue.shift();
+                                    error(data)
                                 }
                             })
                             mock_server.on('exit', function() { 
@@ -265,14 +309,28 @@
 
                 var scopes = scopes_and_names(current_file_src, line_number);
                 scopes.forEach(function(scope) {
-                    scope.names_in_scope.forEach(get_summary)
+                    scope.names_in_scope.forEach(function(name) {
+                        var success = function(data) {
+                            console.log(name, '=', data)
+                        }
+                        var error = function(data) {
+                            console.log('failed to get', name, ':', data)
+                        }
+                        get_summary(name, success, error)
+                    });
                 })
             }
-            function get_summary(name, success_callback, error_callback) {
-                success_callbacks.push(success_callback);
-                error_callbacks.push(error_callback);
-                console.log(name)
-                mock_server.stdin.write(`replugger_summary_info: ${name}`)
+            function noop() {}
+            function get_summary(name, success, error) {
+                success = success || function(data) {
+                    console.log(name, '=', data)
+                }
+                error = error || function(data) {
+                    console.log('failed to get', name, ':', data)
+                }
+                success_callback_queue.push(success);
+                error_callback_queue.push(error);
+                mock_server.stdin.write(`replugger_summary_info: ${name}\n`)
             }
 
             const Mousetrap = require('mousetrap');
