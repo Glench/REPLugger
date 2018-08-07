@@ -307,6 +307,7 @@
                     return
                 }
 
+                // get scopes and names in scope for current line
                 var scopes = scopes_and_names(current_file_src, line_number);
                 scopes.forEach(function(scope) {
                     scope.names_in_scope.forEach(function(name) {
@@ -319,6 +320,16 @@
                         get_summary(name, success, error)
                     });
                 })
+
+                // current line!
+                var current_line_src = current_file_src.split('\n')[line_number-1];
+                if (current_line_src.includes('=')) {
+                    current_line_src = current_line_src.split('=')[1];
+                }
+                if (current_line_src.includes('return ')) {
+                    current_line_src = current_line_src.split('return ')[1];
+                }
+                get_summary(current_line_src, function(data) { console.log('current line evaluates to:', data)}, function(data) { console.error('error when evaluating current line:', data)})
             }
             function noop() {}
             function get_summary(name, success, error) {

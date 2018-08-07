@@ -25,10 +25,30 @@ process.stdin.on('data', function(buffer) {
         var data = lines[i];
         if (data.startsWith('replugger_summary_info:')) {
             var name = data.replace(/^replugger_summary_info:/, '');
-            process.stdout.write(replugger_circular_json.stringify(eval(name), replugger_json_replacer).slice(0, 100)+'\\n')
+            try {
+                var output = eval(name)
+                var json_output = replugger_circular_json.stringify(output, replugger_json_replacer);
+                if (json_output === undefined) {
+                    process.stdout.write('null\\n')
+                } else {
+                    process.stdout.write(json_output.slice(0, 100)+'\\n')
+                }
+            } catch(e) {
+                process.stderr.write(e+'\\n')
+            }
         } else if (data.startsWith('replugger_full_info:')) {
             var name = data.replace(/^replugger_full_info:/, '');
-            process.stdout.write(replugger_circular_json.stringify(eval(name), replugger_json_replacer)+'\\n')
+            try {
+                var output = eval(name)
+                var json_output = replugger_circular_json.stringify(output, replugger_json_replacer);
+                if (json_output === undefined) {
+                    process.stdout.write('null\\n')
+                } else {
+                    process.stdout.write(json_output+'\\n')
+                }
+            } catch(e) {
+                process.stderr.write(e+'\\n')
+            }
         } else if (data.startsWith('replugger_run_code:')) {
             var code = data.replace(/^replugger_run_code:/, '');
             try {
