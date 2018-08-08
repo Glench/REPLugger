@@ -58,6 +58,7 @@
                 border: 1px solid #ddd;
             }
             #sidebar table {
+                border: 1px solid #ddd;
                 width: 100%;
                 table-layout: auto;
             }
@@ -134,10 +135,13 @@
         <div id="main-editor"></div>
 
         <div id="sidebar">
+            <div id="scope-table">
+            </div>
+
+            <div id="current-line">
+            </div>
         </div>
 
-        <script src="node_modules/jquery/dist/jquery.js"></script>
-        <script src="node_modules/underscore/underscore.js"></script>
         <script src="node_modules/codemirror/lib/codemirror.js"></script>
         <script src="node_modules/codemirror/mode/javascript/javascript.js"></script>
         <script src="node_modules/codemirror/addon/selection/active-line.js"></script>
@@ -154,6 +158,9 @@
             const {dialog} = require('electron').remote;
             const exec = require('child_process').exec;
             const {spawn, spawnSync} = require('child_process')
+            const React = require('react')
+            const ReactDOM = require('react-dom');
+            const _ = require('underscore')
 
             function assert(condition) {
                 if (!condition) {
@@ -300,6 +307,11 @@
             }
             build(main_editor.getValue());
 
+            function render_scope_table() {
+                ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes, values: values}), document.querySelector('#scope-table'))
+            }
+            scopes = null;
+            values = {};
             function run(current_file_src, line_number) {
                 console.log('running...')
                 if (!mock_server) {
@@ -307,12 +319,32 @@
                     return
                 }
 
+                // current line!
+                var original_current_line_src = current_file_src.split('\n')[line_number-1];
+                var modified_line_src = original_current_line_src;
+                if (modified_line_src.includes('=')) { // @Robustness: watch for boolean expressions with ==
+                    modified_line_src = modified_line_src.split('=')[1];
+                }
+                if (modified_line_src.includes('return ')) { // @Robustness: watch for expressions with inline 'return's e.g. map
+                    modified_line_src = modified_line_src.split('return ')[1];
+                }
+                get_summary(modified_line_src, function(data) { 
+                    // console.log('current line evaluates to:', data)
+                    ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: data, line_number: line_number}), document.querySelector('#current-line'))
+                }, function(data) {
+                    ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: data, line_number: line_number, error: data}), document.querySelector('#current-line'))
+                    console.error('error when evaluating current line:', data)
+                })
+
+
                 // get scopes and names in scope for current line
-                var scopes = scopes_and_names(current_file_src, line_number);
+                scopes = scopes_and_names(current_file_src, line_number);
+                values = {};
                 scopes.forEach(function(scope) {
                     scope.names_in_scope.forEach(function(name) {
                         var success = function(data) {
-                            console.log(name, '=', data)
+                            // console.log('value of "', name, '" is', data)
+                            values[name] = data;
                         }
                         var error = function(data) {
                             console.log('failed to get', name, ':', data)
@@ -320,18 +352,10 @@
                         get_summary(name, success, error)
                     });
                 })
+                get_summary(scopes[0].names_in_scope[0], render_scope_table, render_scope_table)
 
-                // current line!
-                var current_line_src = current_file_src.split('\n')[line_number-1];
-                if (current_line_src.includes('=')) {
-                    current_line_src = current_line_src.split('=')[1];
-                }
-                if (current_line_src.includes('return ')) {
-                    current_line_src = current_line_src.split('return ')[1];
-                }
-                get_summary(current_line_src, function(data) { console.log('current line evaluates to:', data)}, function(data) { console.error('error when evaluating current line:', data)})
+
             }
-            function noop() {}
             function get_summary(name, success, error) {
                 success = success || function(data) {
                     console.log(name, '=', data)
@@ -356,19 +380,97 @@
                 click: () => { build(main_editor.getValue(), main_editor.getCursor().line+1) }
             }))
 
-            function run_mock_environment_server() {
-                // 1. run specially-prepared file in step build().0, e.g. `node renderer.js`
+            class Value extends React.Component {
+                constructor(props) {
+                    super(props);
+                    this.state = {editing: false, value: props.value}
+                    this.edit = this.edit.bind(this);
+                    this.change = this.change.bind(this);
+                    this.blur = this.blur.bind(this);
+                    this.keydown = this.keydown.bind(this);
+                }
+                change(evt) {
+                    this.setState({value: evt.target.value})
+                }
+                edit(evt) {
+                    this.setState({editing: true})
+                }
+                blur(evt) {
+                    if (!variable_overrides[current_line_number]) {
+                        variable_overrides[current_line_number] = {}
+                    }
+                    this.setState({editing: false})
+                    variable_overrides[current_line_number][this.props.name] = evt.target.value;
+                    run_and_render();
+                }
+                keydown(evt) {
+                    if (evt.which == 13) {
+                        if (!variable_overrides[current_line_number]) {
+                            variable_overrides[current_line_number] = {}
+                        }
+                        this.setState({editing: false})
+                        variable_overrides[current_line_number][this.props.name] = evt.target.value;
+                        run_and_render();
+                    }
+                }
+                render() {
+                    return React.createElement('input', {
+                        value: this.state.value,
+                        readOnly: !this.state.editing,
+                        onChange: this.change,
+                        onDoubleClick: this.edit,
+                        // onBlur: this.blur,
+                        onKeyDown: this.keydown,
+                    })
+                }
             }
 
-            function on_typing() {
-                // throttled probably
 
-                // on new line (?) recompute names to look for
-                // send 'straight-line' code to server that can be run sequentially, from top of file to the line the cursor is on
-                // if error, report the error, line number can be tricky
-                // ask for summary values of all names
+            class ScopeTable extends React.Component {
+                update_height() {
+                    setTimeout(function() {
+                        $('#test').height($(window).height() - $('#current-line').height()-50).scrollTop(100000)
+                    }, 300)
+                }
+                componentDidUpdate() {
+                    this.update_height();
+                }
+                componentDidMount() {
+                    this.update_height();
+                }
+                render() {
+                    return React.createElement('table', null, this.props.scopes.map(scope => {
+                        scope.names_in_scope.sort();
+                        return [React.createElement('thead', {key: scope.scope_name},
+                            React.createElement('tr', null,
+                                React.createElement('th', {colSpan: 2}, scope.scope_name)
+                            )
+                        ),
+                        React.createElement('tbody', {key: scope.scope_name+' body'},
+                            scope.names_in_scope.map(name => {
+                                return React.createElement('tr', {key: name}, [
+                                    React.createElement('td', {key: name+' name'}, name),
+                                    React.createElement('td', {key: name+' value'}, React.createElement(Value, {name: name, value: this.props.values[name]})),
+                                ])
+                            })
+                        )
+                        ]
+                    }));
+                }
             }
 
+            class Current_Line extends React.Component {
+                constructor(props) {
+                    super(props)
+                }
+                render() {
+                    return React.createElement('div', null, [
+                        React.createElement('h3', null, `Line #${this.props.line_number}`),
+                        React.createElement('h2', {style: {wrap: 'nowrap'}}, this.props.src),
+                        React.createElement('h1', null, this.props.error || this.props.value),
+                    ])
+                }
+            }
 
 
 

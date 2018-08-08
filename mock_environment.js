@@ -29,7 +29,7 @@ process.stdin.on('data', function(buffer) {
                 var output = eval(name)
                 var json_output = replugger_circular_json.stringify(output, replugger_json_replacer);
                 if (json_output === undefined) {
-                    process.stdout.write('null\\n')
+                    process.stdout.write('undefined\\n')
                 } else {
                     process.stdout.write(json_output.slice(0, 100)+'\\n')
                 }
@@ -42,7 +42,7 @@ process.stdin.on('data', function(buffer) {
                 var output = eval(name)
                 var json_output = replugger_circular_json.stringify(output, replugger_json_replacer);
                 if (json_output === undefined) {
-                    process.stdout.write('null\\n')
+                    process.stdout.write('undefined\\n')
                 } else {
                     process.stdout.write(json_output+'\\n')
                 }
