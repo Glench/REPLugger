@@ -193,7 +193,7 @@
             CodeMirror.Vim.map('jj', '<Esc>', 'insert')
 
             $('.CodeMirror').height($(window).height() - 2)
-            main_editor.refresh() // for some reason only shows few lines
+            main_editor.refresh() // need to refresh after editor height change to render all lines
 
             main_editor.on('cursorActivity', _.debounce(cursor_activity, 200));
             function cursor_activity(codemirror_instance) {
@@ -208,7 +208,10 @@
             //       - add filled_in_names in scope detection code
             //    - implement overwriting specific values (and be able to save them on line they came from!)
             //    - `for` loop / while loop / forEach / map recording of values
-            //    - implement 'ask for more info', expandable arrows on objects / long strings (in scope table and in current line evaluation)
+            //    - implement 'ask for more info', expandable arrows on objects / long strings 
+            //          - in scope table
+            //          - in current line
+            //    - implement 'ask for sub-parts of current line'
 
             // Tricky things to deal with:
             //    - since we're using stdout/stderr to communicate, any time the program writes to those streams it gets confused for a server message. console.log messes up REPLugger
@@ -476,7 +479,7 @@
                     return React.createElement('div', null, [
                         React.createElement('h3', null, `Line #${this.props.line_number}`),
                         React.createElement('h2', {style: {whiteSpace: 'nowrap'}}, this.props.src),
-                        React.createElement('h1', null, this.props.error || this.props.value),
+                        React.createElement('h1', {style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
                     ])
                 }
             }
