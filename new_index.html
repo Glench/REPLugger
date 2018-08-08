@@ -164,8 +164,14 @@
 
             function assert(condition) {
                 if (!condition) {
-                    throw 'Assertion failed!'
+                    console.error('assert called! going into debugger...')
+                    debugger
+                    // throw 'Assertion failed!'
                 }
+            }
+
+            function case_insensitive_sort(a,b,) {
+                return a.toLowerCase().localeCompare(b.toLowerCase());
             }
 
 
@@ -196,23 +202,21 @@
             }
 
             // NEXT STEPS:
-            //    - evaluate current line
-            //    - evaluate current line in pieces
             //    - generate straight-line code
+            //    - evaluate current line in pieces
             //    - better scope detection
-            //       - add filled_in_names in scope detection
-            //    - keep server online with functionality:
-            //       - ask for more details about an object (like chrome inspector clicking arrow)
-            //       - send straight-line code to run (will this work?)
-            //       - overwrite specific values (and be able to save them on line they came from!)
-            //        
+            //       - add filled_in_names in scope detection code
+            //    - implement overwriting specific values (and be able to save them on line they came from!)
+            //    - `for` loop / while loop / forEach / map recording of values
+            //    - implement 'ask for more info', expandable arrows on objects / long strings (in scope table and in current line evaluation)
+
+            // Tricky things to deal with:
+            //    - since we're using stdout/stderr to communicate, any time the program writes to those streams it gets confused for a server message. console.log messes up REPLugger
+            //    - how do we get the correct value of 'this' in different scopes?
 
             // TODO: get command+o working
             // https://github.com/electron/electron/blob/master/docs/api/dialog.md
 
-
-
-            // --- build project and get mock server running ---
 
 
             // build initially, also as person types changes to file since they may create a new name as they type.
@@ -249,6 +253,8 @@
                         fs.writeFile(`mock_environment/${current_file_name}`, mock_environment_server_src, function() {
                             if (mock_server) {
                                 mock_server.kill('SIGKILL');
+                                success_callback_queue = []
+                                error_callback_queue = []
                             }
 
                             success_callback_queue.push(function(data) {
@@ -371,6 +377,9 @@
             const Mousetrap = require('mousetrap');
             // Mousetrap.bind('command+g', () => { run(main_editor.getValue(), main_editor.getCursor().line+1)})
             Mousetrap.bind('command+b', () => { build(main_editor.getValue())} )
+            Mousetrap.bind('command+s', () => {
+                fs.writeFile('staged_src/'+current_file_name, main_editor.getValue())
+            })
 
             const {Menu, MenuItem} = require('electron').remote;
             var menu = new Menu();
@@ -440,7 +449,7 @@
                 }
                 render() {
                     return React.createElement('table', null, this.props.scopes.map(scope => {
-                        scope.names_in_scope.sort();
+                        scope.names_in_scope.sort(case_insensitive_sort);
                         return [React.createElement('thead', {key: scope.scope_name},
                             React.createElement('tr', null,
                                 React.createElement('th', {colSpan: 2}, scope.scope_name)
@@ -466,7 +475,7 @@
                 render() {
                     return React.createElement('div', null, [
                         React.createElement('h3', null, `Line #${this.props.line_number}`),
-                        React.createElement('h2', {style: {wrap: 'nowrap'}}, this.props.src),
+                        React.createElement('h2', {style: {whiteSpace: 'nowrap'}}, this.props.src),
                         React.createElement('h1', null, this.props.error || this.props.value),
                     ])
                 }

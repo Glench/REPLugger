@@ -11,7 +11,7 @@ function prepare_current_file_to_act_as_server(file_src, names_of_interest) {
 const replugger_circular_json = require('circular-json');
 function replugger_json_replacer(key, value) {
     if (typeof value === 'function') {
-        return typeof value //.toString();
+        return value.toLocaleString();
     } 
     return value;
 }
