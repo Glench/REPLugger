@@ -9,10 +9,11 @@ function prepare_current_file_to_act_as_server(file_src, names_of_interest) {
 /* ----- REPLUGGER MOCK SERVER ----- */
 
 const replugger_circular_json = require('circular-json');
+const replugger_undescore = require('underscore');
 function replugger_json_replacer(key, value) {
     if (typeof value === 'function') {
         return value.toLocaleString();
-    } 
+    }
     return value;
 }
 var replugger_output = {
@@ -39,13 +40,18 @@ process.stdin.on('data', function(buffer) {
         } else if (data.startsWith('replugger_full_info:')) {
             var name = data.replace(/^replugger_full_info:/, '');
             try {
-                var output = eval(name)
-                var json_output = replugger_circular_json.stringify(output, replugger_json_replacer);
-                if (json_output === undefined) {
-                    process.stdout.write('undefined\\n')
+                var output = eval(name);
+                if (typeof output === 'object') {
+                    var json_output = '{';
+                    _.each(output, function(value, key) {
+                       var value = replugger_circular_json.stringify(value, replugger_json_replacer)
+                       json_output += '"'+ key +'": '+  (value !== undefined ? value.slice(0, 100) : 'undefined') + ',,'
+                    })
+                    json_output += '}'
                 } else {
-                    process.stdout.write(json_output+'\\n')
+                    json_output = replugger_circular_json.stringify(output, replugger_json_replacer).slice(0,500);
                 }
+                process.stdout.write(json_output+'\\n')
             } catch(e) {
                 process.stderr.write(e+'\\n')
             }
