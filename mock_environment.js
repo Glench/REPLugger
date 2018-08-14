@@ -86,7 +86,7 @@ function scopes_and_names(file_src, line_number) {
     */
 
     var lines = file_src.split('\n');
-    var scope_stack = [{scope_name: 'file', line_number: null, names_in_scope: []}];
+    var scope_stack = [{scope_name: 'file', line_number: null, names_in_scope: [], fill_in_names: []}];
     for (var i = 0; i < lines.length; ++i) {
         if (i >= line_number-1) {
             return scope_stack;
@@ -115,7 +115,18 @@ function scopes_and_names(file_src, line_number) {
             }
         }
         if (line.endsWith('{')) {
-            scope_stack.push({scope_name: line, line_number: i+1, names_in_scope: []})
+            scope_stack.push({scope_name: line, line_number: i+1, names_in_scope: [], fill_in_names: []})
+            var current_scope_stack = scope_stack[scope_stack.length-1];
+
+            var function_re = /function[\w\s]*\(([\w,\s]+)\)\s?\{$/;
+            var match_groups = line.match(function_re)
+            if (match_groups) {
+                var arguments = match_groups[match_groups.length-1].split(',').map(arg => arg.trim())
+                arguments.forEach(function(arg) {
+                    current_scope_stack.names_in_scope.push(arg)
+                    current_scope_stack.fill_in_names.push(arg)
+                })
+            }
         }
     }
 }

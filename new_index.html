@@ -85,13 +85,20 @@
                 width: 100%; /* makes sure this column takes up as much space as it can */
             }
 
+
+            #scope-table tr.fill-in td {
+                font-weight: bold;
+                color: red;
+            }
+            #scope-table tr.fill-in .CodeMirror {
+                outline: 1px solid red;
+            }
             #scope-table .CodeMirror {
                 background-color: transparent;
                 border: 0;
                 display: block;
                 width: 345px;
             }
-
             #scope-table .codemirror-container {
                 display: inline-block;
             }
@@ -116,6 +123,11 @@
                 background-color: white;
                 width: 36%;
                 padding-bottom: 20px;
+            }
+            #current-line .CodeMirror {
+                height: auto;
+                border: 0;
+                font-size: 1.2em;
             }
             #sidebar .current-line-expansion {
                 font-size: 14px;
@@ -277,7 +289,6 @@
             //    - implement overwriting specific values (and be able to save them on line they came from!)
             //    - `for` loop / while loop / forEach / map recording of values
             //    - implement 'ask for more info', expandable arrows on objects / long strings 
-            //          - in scope table
             //          - in current line
             //    - implement 'ask for sub-parts of current line'
 
@@ -399,7 +410,7 @@
                 }
 
                 // current line!
-                var original_current_line_src = current_file_src.split('\n')[line_number-1];
+                var original_current_line_src = current_file_src.split('\n')[line_number-1].trim();
                 var modified_line_src = original_current_line_src;
                 if (modified_line_src.includes('=')) { // @Robustness: watch for boolean expressions with ==
                     modified_line_src = modified_line_src.split('=')[1];
@@ -412,15 +423,19 @@
                     ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: data, line_number: line_number}), document.querySelector('#current-line'))
                 }, function(data) {
                     ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: data, line_number: line_number, error: data}), document.querySelector('#current-line'))
-                    console.error('error when evaluating current line:', data)
+                    // console.error('error when evaluating current line:', data)
                 })
 
 
-                // get scopes and names in scope for current line
                 scopes = scopes_and_names(current_file_src, line_number);
-                values = {};
+                values = {}; // name: value
+                fill_in_exprs = {}; // scope_name: 
+
                 scopes.forEach(function(scope) {
                     scope.names_in_scope.forEach(function(name) {
+                        if (scope.fill_in_names.includes(name)) {
+                            return
+                        }
                         var success = function(data) {
                             // console.log('value of "', name, '" is', data)
                             values[name] = data;
@@ -431,7 +446,7 @@
                         get_summary(name, success, error)
                     });
                 })
-                get_summary(scopes[0].names_in_scope[0], render_scope_table, render_scope_table)
+                get_summary(scopes[0].names_in_scope[0], render_scope_table, render_scope_table) // a callback for when queries for all names in all scopes are finished
 
 
             }
@@ -482,6 +497,7 @@
                     this.blur = this.blur.bind(this);
                     this.keydown = this.keydown.bind(this);
                     this.click_arrow = this.click_arrow.bind(this);
+                    this.change = this.change.bind(this);
                 }
                 change(evt) {
                     this.setState({value: evt.target.value})
@@ -524,19 +540,24 @@
                     }
                     this.setState({expanded: !this.state.expanded})
                 }
+                change(value, cm_change) {
+
+                }
                 render() {
                     var value = this.props.name in expanded_values ? expanded_values[this.props.name] : this.state.value;
-                    if (value.startsWith('"function') || value.startsWith('"class')) {
-                        value = value.slice(1).slice(0,-1);
-                    }
-                    var should_expand = false;
-                    if (value.startsWith('{')) {
-                        should_expand = true;
-                    }
-                    if (value == '[]') {
-                        should_expand = false;
-                    } else if (value.startsWith('[')) {
-                        should_expand = true;
+                    if (typeof value === 'string') {
+                        if (value.startsWith('"function') || value.startsWith('"class')) {
+                            value = value.slice(1).slice(0,-1);
+                        }
+                        var should_expand = false;
+                        if (value.startsWith('{')) {
+                            should_expand = true;
+                        }
+                        if (value == '[]') {
+                            should_expand = false;
+                        } else if (value.startsWith('[')) {
+                            should_expand = true;
+                        }
                     }
                     return [
                         !should_expand ? null :
@@ -547,6 +568,7 @@
                             options: {
                                 value: value,
                                 mode: 'javascript',
+                                onChange: this.change,
                             },
                         })
                     ]
@@ -556,9 +578,7 @@
 
             class ScopeTable extends React.Component {
                 update_height() {
-                    setTimeout(function() {
-                        $('#test').height($(window).height() - $('#current-line').height()-50).scrollTop(100000)
-                    }, 300)
+                    // scroll table to bottom
                 }
                 componentDidUpdate() {
                     this.update_height();
@@ -576,7 +596,7 @@
                         ),
                         React.createElement('tbody', {key: scope.scope_name+' body'},
                             scope.names_in_scope.map(name => {
-                                return React.createElement('tr', {key: name}, [
+                                return React.createElement('tr', {key: name, className: scope.fill_in_names.includes(name) ? 'fill-in' : ''}, [
                                     React.createElement('td', {key: name+' name'}, name),
                                     React.createElement('td', {key: name+' value'}, React.createElement(Value, {name: name, value: this.props.values[name]})),
                                 ])
@@ -593,9 +613,10 @@
                 }
                 render() {
                     return React.createElement('div', null, [
-                        React.createElement('h3', null, `Line #${this.props.line_number}`),
-                        React.createElement('h2', {style: {whiteSpace: 'nowrap'}}, this.props.src),
-                        React.createElement('h1', {style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
+                        React.createElement('h2', null, `Line #${this.props.line_number}`),
+                        React.createElement(ReactCodeMirror, {className: 'current-line-src', options: {value: this.props.src, mode: 'javascript'}}),
+                        React.createElement(ReactCodeMirror, {options: {value: this.props.error || this.props.value}, style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
+                        // React.createElement(Value, {name: this.props.src, value: this.props.error || this.props.value}),
                     ])
                 }
             }

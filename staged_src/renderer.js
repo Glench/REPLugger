@@ -39,17 +39,6 @@ module.exports.ui_blocks = ui_blocks;
 
 class UIBlock {
 
-    // in # of rows, not pixels
-    // in # of rows, not pixels
-    // in # of rows, not pixels
-    // in # of rows, not pixels
-    // in # of rows, not pixels
-    // in # of rows
-
-
-    // should be React.Component, but  is awful
-    // should be React.Component, but  is awful
-
     constructor() {
         this.should_auto_resize = true;
         this.width_in_columns = 1;
