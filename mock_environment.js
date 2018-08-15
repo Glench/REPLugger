@@ -41,7 +41,7 @@ process.stdin.on('data', function(buffer) {
             var name = data.replace(/^replugger_full_info:/, '');
             try {
                 var output = eval(name);
-                // why is typeof null and object?!?!?!
+                // why is typeof null an object?!?!?!
                 if (output !== null && typeof output === 'object') {
                     var json_output = '{';
                     _.each(output, function(value, key) {
@@ -50,7 +50,11 @@ process.stdin.on('data', function(buffer) {
                     })
                     json_output += '}'
                 } else {
-                    json_output = replugger_circular_json.stringify(output, replugger_json_replacer).slice(0,500);
+                    try {
+                        json_output = replugger_circular_json.stringify(output, replugger_json_replacer).slice(0,500);
+                    } catch(e) {
+                        json_output = 'undefined'
+                    }
                 }
                 process.stdout.write(json_output.replace(/\\n/g, '__REPLUGGERNL__')+'\\n')
             } catch(e) {

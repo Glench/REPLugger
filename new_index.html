@@ -409,7 +409,7 @@
                 ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes, values: values}), document.querySelector('#scope-table'))
             }
             function render_setup_error(error) {
-                if (error == 'ok') { error = ''}
+                if (error == 'ok') { error = ''} else { error = 'Line 133 '+error}
                 ReactDOM.render(React.createElement('p', null, error), document.querySelector('#setup-error'))
             }
             scopes = null;
@@ -428,9 +428,23 @@
                     return
                 }
 
+                scopes = scopes_and_names(current_file_src, line_number);
+                values = {};
 
                 // run script up till current line
-                var src_till_current_line = add_parens(current_file_src.split('\n').slice(0,line_number).join('\n'));
+                var src_till_current_line = current_file_src.split('\n').slice(0,line_number);
+                src_till_current_line = src_till_current_line.map(line => {
+                    var scope_line = line.trim();
+                    for (var i = 0; i < scopes.length; ++i) {
+                        var scope = scopes[i];
+                        if (scope.scope_name === scope_line) {
+                            // replace line with fill-in names
+                            return scope.fill_in_names.map(name => `${name} = ${fill_in_exprs[name]}; // REPLugger-filled-in `).join('\n')
+                        }
+                    }
+                    return line;
+                }).join('\n')
+                src_till_current_line = add_parens(src_till_current_line)
                 run_code(src_till_current_line,
                     render_setup_error,
                     render_setup_error
@@ -473,8 +487,6 @@
 
 
 
-                scopes = scopes_and_names(current_file_src, line_number);
-                values = {};
 
                 scopes.forEach(function(scope) {
                     scope.names_in_scope.forEach(function(name) {
@@ -502,7 +514,6 @@
                 error = error || function(data) {
                     console.log('failed to get', name, ':', data)
                 }
-                console.log('asking for summary for:', name)
                 success_callback_queue.push(success);
                 error_callback_queue.push(error);
                 mock_server.stdin.write(`replugger_summary_info: ${name}\n`)
@@ -514,22 +525,21 @@
                 error = error || function(data) {
                     console.log('failed to get', name, ':', data)
                 }
-                console.log('asking full info for:', name)
                 success_callback_queue.push(success);
                 error_callback_queue.push(error);
                 mock_server.stdin.write(`replugger_full_info: ${name}\n`)
             }
             function run_code(code, success, error) {
-                code = code.replace(/(var|const)\s/g, '') // because of how eval works, want to make sure variables are assigned to global
+                code = code.replace(/(var|const|return)\s/g, '') // because of how eval works, want to make sure variables are assigned to global
                 fs.writeFile('last_run.js', code, function() {})
                 code = code.replace(/\n/g, '__REPLUGGERNL__')
+
                 success = success || function(data) {
                     console.log('successfully ran code')
                 }
                 error = error || function(data) {
                     console.log('running code error:', data)
                 }
-                console.log('calling run_code')
                 success_callback_queue.push(success);
                 error_callback_queue.push(error);
                 mock_server.stdin.write(`replugger_run_code: ${code}\n`)
