@@ -2,7 +2,7 @@
 <html lang="en-US" prefix="og: http://ogp.me/ns#">
 
     <head>
-        <title></title>
+        <title>REPLugger</title>
         <style type="text/css">
             html, body {
                 margin: 0;
@@ -33,7 +33,7 @@
             #main-editor .CodeMirror {
             }
             #sidebar {
-                width: 36%;
+                width: 38%;
                 display: inline-block;
                 font-family: Courier;
                 vertical-align: top;
@@ -46,40 +46,37 @@
                 font-family: Courier;
                 font-size: 13px;
             }
-            #sidebar h2 {
-                background-color: #ace0ff;
-                color: black;
-                padding: 4px 10px;
-            }
-            #test {
+
+            #scope-table {
                 overflow: auto;
             }
-            #sidebar #test {
-                border: 1px solid #ddd;
-            }
-            #sidebar table {
+            #scope-table table {
                 border: 1px solid #ddd;
                 width: 100%;
                 table-layout: auto;
+                /*display: block;*/
             }
-            #sidebar tbody td {
+            #scope-table tbody td {
                 padding: 3px 0;
             }
-            #sidebar tbody tr:nth-child(even) td {
+            #scope-table tbody tr:nth-child(even) td {
                background-color: #eee;
             }
-            #sidebar thead th {
+            #scope-table thead th {
                 text-align: left;
                 padding: 3px 5px;
                 background-color: #d2d2d2;
                 color: black;
                 border-bottom: 1px solid #9e9e9e;
             }
-            #sidebar tbody td {
+            #scope-table tbody td {
                 padding-left: 5px;
                 vertical-align: top;
             }
-            #sidebar tbody td:nth-child(2) {
+            #scope-table tbody td:nth-child(1) {
+                padding-top: 6px;
+            }
+            #scope-table tbody td:nth-child(2) {
                 padding-left: 10px;
                 white-space: nowrap;
                 width: 100%; /* makes sure this column takes up as much space as it can */
@@ -97,10 +94,10 @@
                 background-color: transparent;
                 border: 0;
                 display: block;
-                width: 345px;
             }
             #scope-table .codemirror-container {
                 display: inline-block;
+                width: 100%;
             }
             #scope-table .codemirror-container .CodeMirror {
                 height: 18px;
@@ -117,40 +114,44 @@
                 padding-top: 6px;
             }
 
-            #sidebar #current-line {
+            #setup-error {
+                color: red;
+                font-size: 1.2em;
+                margin-top: 1px;
+            }
+
+            #current-line {
                 position: absolute;
                 bottom: 0;
                 background-color: white;
-                width: 36%;
-                padding-bottom: 20px;
+                padding-bottom: 10px;
+                width: 38%;
             }
             #current-line .CodeMirror {
                 height: auto;
                 border: 0;
                 font-size: 1.2em;
             }
-            #sidebar .current-line-expansion {
-                font-size: 14px;
+            #current-line h2 {
+                background-color: #ace0ff;
+                color: black;
+                padding: 4px 10px;
+                margin-bottom: 8px;
+                margin-top: 10px;
+            }
+            #current-line .current-line-output {
                 white-space: nowrap;
             }
-            #sidebar .interpreted-line div {
-                display: inline-block;
+            #current-line .current-line-output:before {
+                content: '↳';
                 vertical-align: top;
+                display: inline-block;
+                padding-top: 5px;
+                color: #666;
+                padding-left: 5px;
             }
-            #sidebar .interpreted-line div[data] {
-                margin: 1px 0;
-                background-color: #ddd;
-                text-align: center;
-                border: 1px solid #aaa;
-                border-width: 0 1px;
-                overflow: hidden;
-                white-space: nowrap;
-                overflow: auto;
-            }
-            #sidebar .interpreted-line div[data].hover,
-            #sidebar .current-line span.hover
-            {
-                background-color: #8ee5ff;
+            #current-line .current-line-output .CodeMirror {
+                display: inline-block;
             }
 
         </style>
@@ -174,6 +175,9 @@
 
         <div id="sidebar">
             <div id="scope-table">
+            </div>
+
+            <div id="setup-error">
             </div>
 
             <div id="current-line">
@@ -235,7 +239,7 @@
 
             const $ = require('jquery');
             const fs = require('fs');
-            const {scopes_and_names, prepare_current_file_to_act_as_server} = require('./mock_environment')
+            const {scopes_and_names, prepare_current_file_to_act_as_server, add_parens} = require('./mock_environment')
             const {dialog} = require('electron').remote;
             const exec = require('child_process').exec;
             const {spawn, spawnSync} = require('child_process')
@@ -265,7 +269,7 @@
                 lineNumbers: true,
                 styleActiveLine: true,
                 indentUnit: 4,
-                keyMap: 'vim',
+                // keyMap: 'vim',
                 matchBrackets: true,
                 showCursorWhenSelecting: true,
                 inputStyle: 'contenteditable',
@@ -278,7 +282,7 @@
             main_editor.on('cursorActivity', _.debounce(cursor_activity, 200));
             function cursor_activity(codemirror_instance) {
                 var line_number = codemirror_instance.getCursor().line+1;
-                run(codemirror_instance.getValue(), line_number)
+                run(codemirror_instance.getValue(), line_number, codemirror_instance)
             }
 
             // NEXT STEPS:
@@ -351,17 +355,23 @@
 
                             mock_server.stdout.setEncoding('utf-8')
                             mock_server.stdout.on('data', function(buffer) {
+                                console.log('stdout data: ', buffer)
                                 var lines = buffer.toString().split('\n');
                                 for (var i = 0; i < lines.length; ++i) {
-                                    var data = lines[i];
+                                    var data = lines[i].replace(/__REPLUGGERNL__/g, '\n');
                                     if (!data) {
                                         if (i != lines.length-1) { console.error('got an unexpected blank line in the middle of stdout', lines) }
                                         return
                                     }
                                     assert(success_callback_queue.length > 0 && error_callback_queue.length > 0)
                                     var success = success_callback_queue.shift();
-                                    error_callback_queue.shift();
-                                    success(data);
+                                    var error = error_callback_queue.shift();
+                                    if (data.startsWith('replugger_error:')) {
+                                        data = data.replace('replugger_error:', '')
+                                        error(data)
+                                    } else {
+                                        success(data);
+                                    }
                                 }
                             })
 
@@ -372,7 +382,7 @@
                                 }
                                 var lines = raw.split('\n');
                                 for (var i = 0; i < lines.length; ++i) {
-                                    var data = lines[i];
+                                    var data = lines[i].replace(/__REPLUGGERNL__/g, '\n');
                                     if (!data) {
                                         if (i != lines.length-1) { console.error('got an unexpected blank line in the middle of stderr:', lines) }
                                         return
@@ -398,38 +408,73 @@
             function render_scope_table() {
                 ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes, values: values}), document.querySelector('#scope-table'))
             }
+            function render_setup_error(error) {
+                if (error == 'ok') { error = ''}
+                ReactDOM.render(React.createElement('p', null, error), document.querySelector('#setup-error'))
+            }
             scopes = null;
             values = {};
             expanded_values = {};
+            fill_in_exprs = {}; // scope_name: []
 
-            function run(current_file_src, line_number) {
+            function run(current_file_src, line_number, codemirror) {
+                if (success_callback_queue.length > 1) {
+                    console.log('not running because waiting')
+                    return
+                }
                 console.log('running...')
                 if (!mock_server) {
                     console.error('no mock server detected! aborting')
                     return
                 }
 
-                // current line!
-                var original_current_line_src = current_file_src.split('\n')[line_number-1].trim();
+
+                // run script up till current line
+                var src_till_current_line = add_parens(current_file_src.split('\n').slice(0,line_number).join('\n'));
+                run_code(src_till_current_line,
+                    render_setup_error,
+                    render_setup_error
+                )
+
+
+                // eval current line
+                var selected_text = codemirror.getSelection();
+                if (selected_text && !selected_text.includes('\n')) {
+                    var original_current_line_src = selected_text.trim();
+                } else {
+                    var original_current_line_src = current_file_src.split('\n')[line_number-1].trim();
+                }
                 var modified_line_src = original_current_line_src;
-                if (modified_line_src.includes('=')) { // @Robustness: watch for boolean expressions with ==
+                if (modified_line_src.includes('=') && !modified_line_src.includes('==') && !modified_line_src.includes('!=')) { // @Robustness: watch for boolean expressions with ==
                     modified_line_src = modified_line_src.split('=')[1];
                 }
-                if (modified_line_src.includes('return ')) { // @Robustness: watch for expressions with inline 'return's e.g. map
-                    modified_line_src = modified_line_src.split('return ')[1];
+                if (modified_line_src.includes('return')) { // @Robustness: watch for expressions with inline 'return's e.g. map
+                    modified_line_src = modified_line_src.split('return')[1];
                 }
-                get_summary(modified_line_src, function(data) { 
-                    // console.log('current line evaluates to:', data)
-                    ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: data, line_number: line_number}), document.querySelector('#current-line'))
-                }, function(data) {
-                    ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: data, line_number: line_number, error: data}), document.querySelector('#current-line'))
-                    // console.error('error when evaluating current line:', data)
-                })
+                if (modified_line_src.includes('if (')) {
+                    // evaluate just the boolean test expression of an `if` statement
+                    // e.g. 'else if (dx % cell_width > cell_width / 3) {'.match(/if \((.*)\) {/)[1]
+                    // -> 'dx % cell_width > cell_width / 3'
+                    modified_line_src = modified_line_src.match(/if\s*\((.*)\)?\s?\{?$/)[1].replace(/\)?\s?\{?$/, '')
+                }
+                if (modified_line_src) {
+                    get_full(modified_line_src, function(data) { 
+                        // console.log('current line evaluates to:', data)
+
+                        var value = data.replace('{', '{\n').replace(/,,/g, ',\n').replace(/"function/g, 'function').replace(/"class/g, 'class');
+                        ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: value, line_number: line_number}), document.querySelector('#current-line'))
+                    }, function(error) {
+                        ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: error, line_number: line_number, error: error}), document.querySelector('#current-line'))
+                        // console.error('error when evaluating current line:', data)
+                    })
+                } else {
+                    ReactDOM.render(React.createElement(Current_Line, {src: '', value: '', line_number: line_number, error: ''}), document.querySelector('#current-line'))
+                }
+
 
 
                 scopes = scopes_and_names(current_file_src, line_number);
-                values = {}; // name: value
-                fill_in_exprs = {}; // scope_name: 
+                values = {};
 
                 scopes.forEach(function(scope) {
                     scope.names_in_scope.forEach(function(name) {
@@ -437,7 +482,7 @@
                             return
                         }
                         var success = function(data) {
-                            // console.log('value of "', name, '" is', data)
+                            // console.log(name, '=', data);
                             values[name] = data;
                         }
                         var error = function(data) {
@@ -457,6 +502,7 @@
                 error = error || function(data) {
                     console.log('failed to get', name, ':', data)
                 }
+                console.log('asking for summary for:', name)
                 success_callback_queue.push(success);
                 error_callback_queue.push(error);
                 mock_server.stdin.write(`replugger_summary_info: ${name}\n`)
@@ -468,9 +514,25 @@
                 error = error || function(data) {
                     console.log('failed to get', name, ':', data)
                 }
+                console.log('asking full info for:', name)
                 success_callback_queue.push(success);
                 error_callback_queue.push(error);
                 mock_server.stdin.write(`replugger_full_info: ${name}\n`)
+            }
+            function run_code(code, success, error) {
+                code = code.replace(/(var|const)\s/g, '') // because of how eval works, want to make sure variables are assigned to global
+                fs.writeFile('last_run.js', code, function() {})
+                code = code.replace(/\n/g, '__REPLUGGERNL__')
+                success = success || function(data) {
+                    console.log('successfully ran code')
+                }
+                error = error || function(data) {
+                    console.log('running code error:', data)
+                }
+                console.log('calling run_code')
+                success_callback_queue.push(success);
+                error_callback_queue.push(error);
+                mock_server.stdin.write(`replugger_run_code: ${code}\n`)
             }
 
             const Mousetrap = require('mousetrap');
@@ -491,7 +553,7 @@
             class Value extends React.Component {
                 constructor(props) {
                     super(props);
-                    this.state = {expanded: false, value: props.value}
+                    this.state = {expanded: false}
                     this.edit = this.edit.bind(this);
                     this.change = this.change.bind(this);
                     this.blur = this.blur.bind(this);
@@ -541,10 +603,10 @@
                     this.setState({expanded: !this.state.expanded})
                 }
                 change(value, cm_change) {
-
+                    delete expanded_values[this.props.name];
                 }
                 render() {
-                    var value = this.props.name in expanded_values ? expanded_values[this.props.name] : this.state.value;
+                    var value = this.props.name in expanded_values ? expanded_values[this.props.name] : this.props.value;
                     if (typeof value === 'string') {
                         if (value.startsWith('"function') || value.startsWith('"class')) {
                             value = value.slice(1).slice(0,-1);
@@ -566,7 +628,7 @@
                             key: 'codemirror',
                             className: 'codemirror-container ' + (this.state.expanded ? 'codemirror-container-expanded' : ''),
                             options: {
-                                value: value,
+                                value: value === undefined ? '' : value,
                                 mode: 'javascript',
                                 onChange: this.change,
                             },
@@ -577,8 +639,15 @@
 
 
             class ScopeTable extends React.Component {
+                constructor(props) {
+                    super(props)
+                }
                 update_height() {
-                    // scroll table to bottom
+                    // resize table and scroll to bottom
+                    var height = $(window).height() - $('#current-line').outerHeight() - $('#setup-error').outerHeight();
+                    $('#scope-table').height(height - 6);
+
+                    document.querySelector('#scope-table').scrollTop = 999999;
                 }
                 componentDidUpdate() {
                     this.update_height();
@@ -598,7 +667,7 @@
                             scope.names_in_scope.map(name => {
                                 return React.createElement('tr', {key: name, className: scope.fill_in_names.includes(name) ? 'fill-in' : ''}, [
                                     React.createElement('td', {key: name+' name'}, name),
-                                    React.createElement('td', {key: name+' value'}, React.createElement(Value, {name: name, value: this.props.values[name]})),
+                                    React.createElement('td', {key: name+' value'}, React.createElement(Value, {name: name, value: values[name]})),
                                 ])
                             })
                         )
@@ -613,9 +682,9 @@
                 }
                 render() {
                     return React.createElement('div', null, [
-                        React.createElement('h2', null, `Line #${this.props.line_number}`),
+                        React.createElement('h2', {key: 'line-#'}, `Line #${this.props.line_number}`),
                         React.createElement(ReactCodeMirror, {className: 'current-line-src', options: {value: this.props.src, mode: 'javascript'}}),
-                        React.createElement(ReactCodeMirror, {options: {value: this.props.error || this.props.value}, style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
+                        React.createElement(ReactCodeMirror, {className: 'current-line-output', options: {value: this.props.error || this.props.value}, style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
                         // React.createElement(Value, {name: this.props.src, value: this.props.error || this.props.value}),
                     ])
                 }

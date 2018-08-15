@@ -4,7 +4,7 @@ const flow_remove_types = require('flow-remove-types');
 
 function prepare_current_file_to_act_as_server(file_src, names_of_interest) {
     var server_src = `console.log('server would be running here')`
-    var mock_server_src = `${file_src}
+    var mock_server_src = `${file_src.replace(/const /g, 'var ')}
 
 /* ----- REPLUGGER MOCK SERVER ----- */
 
@@ -32,16 +32,17 @@ process.stdin.on('data', function(buffer) {
                 if (json_output === undefined) {
                     process.stdout.write('undefined\\n')
                 } else {
-                    process.stdout.write(json_output.slice(0, 100)+'\\n')
+                    process.stdout.write(json_output.slice(0, 100).replace(/\\n/g, '__REPLUGGERNL__')+'\\n')
                 }
             } catch(e) {
-                process.stderr.write(e+'\\n')
+                process.stdout.write('replugger_error:'+e.toString().replace(/\\n/g, '__REPLUGGERNL__')+'\\n')
             }
         } else if (data.startsWith('replugger_full_info:')) {
             var name = data.replace(/^replugger_full_info:/, '');
             try {
                 var output = eval(name);
-                if (typeof output === 'object') {
+                // why is typeof null and object?!?!?!
+                if (output !== null && typeof output === 'object') {
                     var json_output = '{';
                     _.each(output, function(value, key) {
                        var value = replugger_circular_json.stringify(value, replugger_json_replacer)
@@ -51,17 +52,17 @@ process.stdin.on('data', function(buffer) {
                 } else {
                     json_output = replugger_circular_json.stringify(output, replugger_json_replacer).slice(0,500);
                 }
-                process.stdout.write(json_output+'\\n')
+                process.stdout.write(json_output.replace(/\\n/g, '__REPLUGGERNL__')+'\\n')
             } catch(e) {
-                process.stderr.write(e+'\\n')
+                process.stdout.write('replugger_error:'+e.toString().replace(/\\n/g, '__REPLUGGERNL__')+'\\n')
             }
         } else if (data.startsWith('replugger_run_code:')) {
-            var code = data.replace(/^replugger_run_code:/, '');
+            var code = data.replace('replugger_run_code:', '').replace(/__REPLUGGERNL__/g, '\\n');
             try {
                 eval(code);
                 process.stdout.write('ok\\n')
             } catch(e) {
-                process.stderr.write(e.message+'\\n')
+                process.stdout.write('replugger_error:'+e.toString().replace(/\\n/g, '__REPLUGGERNL__')+'\\n')
             }
         }
     }
@@ -88,7 +89,7 @@ function scopes_and_names(file_src, line_number) {
     var lines = file_src.split('\n');
     var scope_stack = [{scope_name: 'file', line_number: null, names_in_scope: [], fill_in_names: []}];
     for (var i = 0; i < lines.length; ++i) {
-        if (i >= line_number-1) {
+        if (i >= line_number) {
             return scope_stack;
         }
 
@@ -131,6 +132,25 @@ function scopes_and_names(file_src, line_number) {
     }
 }
 module.exports.scopes_and_names = scopes_and_names;
+
+function add_parens(src) {
+    // thing.map(function () {
+    // -> thing.map(function() {})
+    var length = src.length;
+    var paren_queue = [];
+    for (var i = 0; i < length; ++i) {
+        var character = src[i];
+        if (character == '(') {
+            paren_queue.push(')')
+        } else if (character == '{') {
+            paren_queue.push('}')
+        } else if (character == ')' || character == '}') {
+            paren_queue.pop();
+        }
+    }
+    return src+'\n'+ paren_queue.reverse().join('');
+}
+module.exports.add_parens = add_parens;
 
 function ast_to_list_of_scopes(node, scope_name, current_line_number, src, output) {
     // produce a list of scopes with variable names in each scope:

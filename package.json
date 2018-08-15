@@ -5,6 +5,7 @@
   "main": "electron_app.js",
   "dependencies": {
     "babel-plugin-transform-flow-strip-types": "^6.22.0",
+    "canvas": "^1.6.11",
     "circular-json": "^0.4.0",
     "codemirror": "^5.31.0",
     "deepcopy": "^0.6.3",
