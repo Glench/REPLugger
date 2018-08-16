@@ -69,6 +69,35 @@
                 color: black;
                 border-bottom: 1px solid #9e9e9e;
             }
+            #scope-table thead th .menu-button {
+                opacity: 1;
+                margin-right: 6px;
+                color: #777;
+                font-size: 9px;
+                cursor: default;
+            }
+            #scope-table .menu {
+                z-index: 100;
+                position: absolute;
+                background-color: white;
+                border: 1px solid #bbb; 
+                list-style: none;
+                margin: 0;
+                padding: 0;
+                box-shadow: 3px 3px 9px rgba(0, 0, 0, 0.24);
+            }
+            #scope-table .menu li {
+                padding: 6px 15px;
+                cursor: default;
+                font-family: "Helvetica Neue", Helvetica, sans-serif;
+            }
+
+            #scope-table .menu li:hover {
+                background-color: #333;
+                color: white;
+            }
+
+
             #scope-table tbody td {
                 padding-left: 5px;
                 vertical-align: top;
@@ -200,10 +229,12 @@
               super(props)
               this.updateStyle = this.updateStyle.bind(this);
               this.codemirrorValueChanged = this.codemirrorValueChanged.bind(this);
+              this.codemirrorKeyHandled = this.codemirrorKeyHandled.bind(this);
             }
             componentDidMount() {
               this.codemirrorInstance = CodeMirror.fromTextArea(this.refs.textarea, this.props.options)
               this.codemirrorInstance.on('change', this.codemirrorValueChanged)
+              this.codemirrorInstance.on('keydown', this.codemirrorKeyHandled)
               this.updateStyle();
             }
             updateStyle() {
@@ -223,6 +254,12 @@
               if (this.props.options.onChange && change.origin !== 'setValue') {
                 this.props.options.onChange(doc.getValue(), change);
               }
+            }
+            codemirrorKeyHandled(instance, keyName, domEvt) {
+                // https://codemirror.net/doc/manual.html#event_change
+                if (this.props.options.onKeypress) {
+                    this.props.options.onKeypress(instance, keyName)
+                }
             }
             componentWillUnmount() {
               if (this.codemirrorInstance) {
@@ -286,15 +323,7 @@
             }
 
             // NEXT STEPS:
-            //    - generate straight-line code
-            //    - evaluate current line in pieces
-            //    - better scope detection
-            //       - add filled_in_names in scope detection code
-            //    - implement overwriting specific values (and be able to save them on line they came from!)
             //    - `for` loop / while loop / forEach / map recording of values
-            //    - implement 'ask for more info', expandable arrows on objects / long strings 
-            //          - in current line
-            //    - implement 'ask for sub-parts of current line'
 
             // Tricky things to deal with:
             //    - since we're using stdout/stderr to communicate, any time the original program writes to those streams it gets confused for a server message. console.log messes up REPLugger, for example
@@ -355,7 +384,6 @@
 
                             mock_server.stdout.setEncoding('utf-8')
                             mock_server.stdout.on('data', function(buffer) {
-                                console.log('stdout data: ', buffer)
                                 var lines = buffer.toString().split('\n');
                                 for (var i = 0; i < lines.length; ++i) {
                                     var data = lines[i].replace(/__REPLUGGERNL__/g, '\n');
@@ -415,7 +443,24 @@
             scopes = null;
             values = {};
             expanded_values = {};
-            fill_in_exprs = {}; // scope_name: []
+
+            active_overwrites = {};
+            saved_overwrites = {};
+
+            /*
+                saved_overwrites = {
+                    scope_name: {
+                        overwritten_name_in_scope: expression
+                    }
+                }
+                active_overwrites = {
+                    scope_name: {
+                        overwritten_name_in_scope: expression
+                    }
+                }
+
+                Next: write overwrites into file
+            */
 
             function run(current_file_src, line_number, codemirror) {
                 if (success_callback_queue.length > 1) {
@@ -439,7 +484,8 @@
                         var scope = scopes[i];
                         if (scope.scope_name === scope_line) {
                             // replace line with fill-in names
-                            return scope.fill_in_names.map(name => `${name} = ${fill_in_exprs[name]}; // REPLugger-filled-in `).join('\n')
+                            return ''
+                            // return scope.fill_in_names.map(name => `${name} = ${fill_in_exprs[name]}; // REPLugger-filled-in `).join('\n')
                         }
                     }
                     return line;
@@ -564,36 +610,9 @@
                 constructor(props) {
                     super(props);
                     this.state = {expanded: false}
-                    this.edit = this.edit.bind(this);
-                    this.change = this.change.bind(this);
-                    this.blur = this.blur.bind(this);
-                    this.keydown = this.keydown.bind(this);
+                    this.keypress = this.keypress.bind(this);
                     this.click_arrow = this.click_arrow.bind(this);
                     this.change = this.change.bind(this);
-                }
-                change(evt) {
-                    this.setState({value: evt.target.value})
-                }
-                edit(evt) {
-                    this.setState({editing: true})
-                }
-                blur(evt) {
-                    if (!variable_overrides[current_line_number]) {
-                        variable_overrides[current_line_number] = {}
-                    }
-                    this.setState({editing: false})
-                    variable_overrides[current_line_number][this.props.name] = evt.target.value;
-                    run_and_render();
-                }
-                keydown(evt) {
-                    if (evt.which == 13) {
-                        if (!variable_overrides[current_line_number]) {
-                            variable_overrides[current_line_number] = {}
-                        }
-                        this.setState({editing: false})
-                        variable_overrides[current_line_number][this.props.name] = evt.target.value;
-                        run_and_render();
-                    }
                 }
                 click_arrow(evt) {
                     evt.preventDefault();
@@ -614,6 +633,17 @@
                 }
                 change(value, cm_change) {
                     delete expanded_values[this.props.name];
+                }
+                keypress(cm_instance, evt) {
+                    if (evt.key === 'Enter' && (!evt.ctrlKey || !evt.shiftKey)) {
+                        evt.preventDefault();
+                        if (!active_overwrites[this.props.scope.scope_name]) {
+                            active_overwrites[this.props.scope.scope_name] = {}
+                        }
+
+                        active_overwrites[this.props.scope.scope_name][this.props.name] = cm_instance.getValue();
+                        get_summary(this.props.name, render_scope_table, render_scope_table)
+                    }
                 }
                 render() {
                     var value = this.props.name in expanded_values ? expanded_values[this.props.name] : this.props.value;
@@ -641,6 +671,7 @@
                                 value: value === undefined ? '' : value,
                                 mode: 'javascript',
                                 onChange: this.change,
+                                onKeypress: this.keypress,
                             },
                         })
                     ]
@@ -651,6 +682,7 @@
             class ScopeTable extends React.Component {
                 constructor(props) {
                     super(props)
+                    this.menu_button_click = this.menu_button_click.bind(this);
                 }
                 update_height() {
                     // resize table and scroll to bottom
@@ -665,19 +697,52 @@
                 componentDidMount() {
                     this.update_height();
                 }
+                menu_button_click(scope) {
+                    return (evt) => {
+                        // menu already open
+                        if ($('.menu').length > 0) {
+                            $('.menu').remove();  
+                            return
+                        }
+
+                        var $button = $(evt.target);
+                        var $menu = $('<ul class="menu">');
+                        $menu.css({top: $button.offset().top+10, left: $button.offset().left})
+                        // add name to scope
+                        // save current values -> alert to enter name
+                        $menu.append($('<li>').text('Add name').on('click', function(evt) {
+
+                            $('.menu').remove()
+                        }))
+                        $menu.append($('<li>').text('Save names and values').on('click', function(evt) {
+
+                            $('.menu').remove()
+                        }))
+                        if (scope.scope_name in fill_in_exprs) {
+                            $menu.append('<hr>')
+                            // add named saves
+                            // _.each(fill_in_exprs[scope.scope_name], function(value, name) {})
+
+                        }
+                        $('#scope-table').append($menu)
+                    }
+                }
                 render() {
                     return React.createElement('table', null, this.props.scopes.map(scope => {
                         scope.names_in_scope.sort(case_insensitive_sort);
                         return [React.createElement('thead', {key: scope.scope_name},
                             React.createElement('tr', null,
-                                React.createElement('th', {colSpan: 2}, scope.scope_name)
+                                React.createElement('th', {colSpan: 2}, [
+                                    React.createElement('span', {key: 'button', onClick: this.menu_button_click(scope), className: 'menu-button'}, '🔽'),
+                                    React.createElement('span', {key: 'name'}, scope.scope_name),
+                                ])
                             )
                         ),
                         React.createElement('tbody', {key: scope.scope_name+' body'},
                             scope.names_in_scope.map(name => {
                                 return React.createElement('tr', {key: name, className: scope.fill_in_names.includes(name) ? 'fill-in' : ''}, [
                                     React.createElement('td', {key: name+' name'}, name),
-                                    React.createElement('td', {key: name+' value'}, React.createElement(Value, {name: name, value: values[name]})),
+                                    React.createElement('td', {key: name+' value'}, React.createElement(Value, {name: name, value: values[name], scope: scope})),
                                 ])
                             })
                         )
