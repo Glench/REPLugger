@@ -114,10 +114,15 @@
 
             #scope-table tr.fill-in td {
                 font-weight: bold;
+            }
+            #scope-table tr.fill-in-blank td {
                 color: red;
             }
-            #scope-table tr.fill-in .CodeMirror {
+            #scope-table tr.fill-in-blank .CodeMirror {
                 outline: 1px solid red;
+            }
+            #scope-table tr td.overwritten .CodeMirror {
+                background-color: yellow !important;
             }
             #scope-table .CodeMirror {
                 background-color: transparent;
@@ -230,11 +235,13 @@
               this.updateStyle = this.updateStyle.bind(this);
               this.codemirrorValueChanged = this.codemirrorValueChanged.bind(this);
               this.codemirrorKeyHandled = this.codemirrorKeyHandled.bind(this);
+              this.codemirrorFocus = this.codemirrorFocus.bind(this);
             }
             componentDidMount() {
               this.codemirrorInstance = CodeMirror.fromTextArea(this.refs.textarea, this.props.options)
-              this.codemirrorInstance.on('change', this.codemirrorValueChanged)
-              this.codemirrorInstance.on('keydown', this.codemirrorKeyHandled)
+              this.codemirrorInstance.on('change', this.codemirrorValueChanged);
+              this.codemirrorInstance.on('keydown', this.codemirrorKeyHandled);
+              this.codemirrorInstance.on('focus', this.codemirrorFocus);
               this.updateStyle();
             }
             updateStyle() {
@@ -259,6 +266,11 @@
                 // https://codemirror.net/doc/manual.html#event_change
                 if (this.props.options.onKeypress) {
                     this.props.options.onKeypress(instance, keyName)
+                }
+            }
+            codemirrorFocus(instance, evt) {
+                if (this.props.options.onFocus) {
+                    this.props.options.onFocus(instance, evt);
                 }
             }
             componentWillUnmount() {
@@ -450,7 +462,9 @@
             /*
                 saved_overwrites = {
                     scope_name: {
-                        overwritten_name_in_scope: expression
+                        name_of_overwrite: {
+                            overwritten_name_in_scope: expression
+                        }
                     }
                 }
                 active_overwrites = {
@@ -478,14 +492,17 @@
 
                 // run script up till current line
                 var src_till_current_line = current_file_src.split('\n').slice(0,line_number);
+                // if there are overwrites, modify the source to include them
                 src_till_current_line = src_till_current_line.map(line => {
                     var scope_line = line.trim();
                     for (var i = 0; i < scopes.length; ++i) {
                         var scope = scopes[i];
                         if (scope.scope_name === scope_line) {
-                            // replace line with fill-in names
-                            return ''
-                            // return scope.fill_in_names.map(name => `${name} = ${fill_in_exprs[name]}; // REPLugger-filled-in `).join('\n')
+                            // for functions, creates variables for arguments
+                            return scope.fill_in_names.map(name => {
+                                var value = active_overwrites[scope.scope_name] ? active_overwrites[scope.scope_name][name] : undefined;
+                                return `${name} = ${value};`
+                            }).join('\n')
                         }
                     }
                     return line;
@@ -536,9 +553,6 @@
 
                 scopes.forEach(function(scope) {
                     scope.names_in_scope.forEach(function(name) {
-                        if (scope.fill_in_names.includes(name)) {
-                            return
-                        }
                         var success = function(data) {
                             // console.log(name, '=', data);
                             values[name] = data;
@@ -613,6 +627,7 @@
                     this.keypress = this.keypress.bind(this);
                     this.click_arrow = this.click_arrow.bind(this);
                     this.change = this.change.bind(this);
+                    this.focus = this.focus.bind(this);
                 }
                 click_arrow(evt) {
                     evt.preventDefault();
@@ -642,7 +657,19 @@
                         }
 
                         active_overwrites[this.props.scope.scope_name][this.props.name] = cm_instance.getValue();
-                        get_summary(this.props.name, render_scope_table, render_scope_table)
+
+                        main_editor.focus();
+
+                        var line_number = main_editor.getCursor().line+1;
+                        run(main_editor.getValue(), line_number, main_editor)
+
+                    }
+                }
+                focus(cm_instance, evt) {
+                    var overwrites = active_overwrites[this.props.scope.scope_name];
+                    if (overwrites && overwrites[this.props.name]) {
+                        cm_instance.setValue(overwrites[this.props.name])
+                        cm_instance.setSelection({line: 100, ch: 1000}, {line: 0, ch: 0})
                     }
                 }
                 render() {
@@ -672,6 +699,7 @@
                                 mode: 'javascript',
                                 onChange: this.change,
                                 onKeypress: this.keypress,
+                                onFocus: this.focus,
                             },
                         })
                     ]
@@ -740,9 +768,17 @@
                         ),
                         React.createElement('tbody', {key: scope.scope_name+' body'},
                             scope.names_in_scope.map(name => {
-                                return React.createElement('tr', {key: name, className: scope.fill_in_names.includes(name) ? 'fill-in' : ''}, [
+                                var className = '';
+                                if (scope.fill_in_names.includes(name)) {
+                                    className += ' fill-in'
+                                    if (!active_overwrites[scope.scope_name] || !active_overwrites[scope.scope_name][name]) {
+                                        className += ' fill-in-blank'
+                                    }
+                                }
+                                var is_overwritten = active_overwrites[scope.scope_name] && active_overwrites[scope.scope_name][name];
+                                return React.createElement('tr', {key: name, className: className}, [
                                     React.createElement('td', {key: name+' name'}, name),
-                                    React.createElement('td', {key: name+' value'}, React.createElement(Value, {name: name, value: values[name], scope: scope})),
+                                    React.createElement('td', {key: name+' value', className: is_overwritten ? 'overwritten' : ''}, React.createElement(Value, {name: name, value: values[name], scope: scope})),
                                 ])
                             })
                         )
