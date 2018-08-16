@@ -473,7 +473,8 @@
                     }
                 }
 
-                Next: write overwrites into file
+                Next: adding new names to scope
+                next next: saving
             */
 
             function run(current_file_src, line_number, codemirror) {
@@ -494,15 +495,32 @@
                 var src_till_current_line = current_file_src.split('\n').slice(0,line_number);
                 // if there are overwrites, modify the source to include them
                 src_till_current_line = src_till_current_line.map(line => {
+                    // overwrite any arguments to functions by creating variables
                     var scope_line = line.trim();
                     for (var i = 0; i < scopes.length; ++i) {
                         var scope = scopes[i];
                         if (scope.scope_name === scope_line) {
-                            // for functions, creates variables for arguments
                             return scope.fill_in_names.map(name => {
                                 var value = active_overwrites[scope.scope_name] ? active_overwrites[scope.scope_name][name] : undefined;
                                 return `${name} = ${value};`
                             }).join('\n')
+                        }
+                    }
+
+                    // replace any overwritten values in assignment statements
+                    var assignment_re = new RegExp(/var (\w+)\s*=\s*/)
+                    var match = line.match(assignment_re)
+                    if (match) {
+                        console.log('yay!')
+                        var name = match[1];
+                        for (var key in active_overwrites) {
+                            console.log(key, active_overwrites[key], name)
+                            if (!active_overwrites[key]) continue;
+                            var name_is_in_scope = Object.keys(active_overwrites[key]).includes(name)
+                            if (name_is_in_scope) {
+                                var left_assign = line.split('=')[0]
+                                return left_assign + '= ' + active_overwrites[key][name]
+                            }
                         }
                     }
                     return line;
