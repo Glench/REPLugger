@@ -121,6 +121,9 @@
             #scope-table tr.fill-in-blank .CodeMirror {
                 outline: 1px solid red;
             }
+            #scope-table tr.added-name td {
+                background-color: yellow;
+            }
             #scope-table tr td.overwritten .CodeMirror {
                 background-color: yellow !important;
             }
@@ -483,9 +486,6 @@
                     } 
                 }
 
-                Next: adding new names to scope
-                    new_names written active_overwrites
-                next next: saving
             */
 
             function run(current_file_src, line_number, codemirror) {
@@ -602,7 +602,6 @@
                 })
                 _.each(new_names, function(names, scope_name) {
                     _.each(names, function(expr, name) {
-                        console.log(name, expr)
                         var success = function(data) {
                             // console.log(name, '=', data);
                             if (data) {
@@ -788,8 +787,6 @@
                         var $button = $(evt.target);
                         var $menu = $('<ul class="menu">');
                         $menu.css({top: $button.offset().top+10, left: $button.offset().left})
-                        // add name to scope
-                        // save current values -> alert to enter name
                         $menu.append($('<li>').text('Add name').on('click', function(evt) {
                             if (new_names[scope.scope_name] === undefined) {
                                 new_names[scope.scope_name] = {};
@@ -800,12 +797,30 @@
                         }))
                         $menu.append($('<li>').text('Save names and values').on('click', function(evt) {
                             $('.menu').remove()
-                            var save_name = prompt('Enter a name:')
+
+                            const prompt = require('electron-prompt');
+                            prompt('Enter a name').then(save_name => {
+                                if (!saved_overwrites[scope.scope_name]) {
+                                    saved_overwrites[scope.scope_name] = {}
+                                }
+
+                                saved_overwrites[scope.scope_name][save_name] = {}
+                                _.extend(saved_overwrites[scope.scope_name][save_name], active_overwrites[scope.scope_name], saved_overwrites[scope.scope_name])
+                                render_scope_table()
+                            })
                         }))
                         if (scope.scope_name in saved_overwrites) {
                             $menu.append('<hr>')
                             // add named saves
-                            // _.each(fill_in_exprs[scope.scope_name], function(value, name) {})
+                            _.each(saved_overwrites[scope.scope_name], function(names, save_name) {
+                                $menu.append($('<li>'+save_name+'</li>').on('click', function() {
+                                    $('.menu').remove()
+                                    active_overwrites[scope.scope_name] = saved_overwrites[scope.scope_name][save_name]
+
+                                    var line_number = main_editor.getCursor().line+1;
+                                    run(main_editor.getValue(), line_number, main_editor)
+                                }))
+                            })
 
                         }
                         $('#scope-table').append($menu)

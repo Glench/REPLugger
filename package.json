@@ -11,6 +11,7 @@
     "deepcopy": "^0.6.3",
     "diff": "^3.5.0",
     "electron": "^1.7.9",
+    "electron-prompt": "^1.1.0-1",
     "filbert": "^0.1.20",
     "flow-parser": "^0.58.0",
     "flow-remove-types": "^1.2.3",
