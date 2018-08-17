@@ -28,6 +28,9 @@ process.stdin.on('data', function(buffer) {
             var name = data.replace(/^replugger_summary_info:/, '');
             try {
                 var output = eval(name)
+                if (typeof output === 'object' && output !== null && output.isTrusted === false) {
+                    output.isTrusted = true;
+                }
                 var json_output = replugger_circular_json.stringify(output, replugger_json_replacer);
                 if (json_output === undefined) {
                     process.stdout.write('undefined\\n')

@@ -133,8 +133,8 @@
                 display: inline-block;
                 width: 100%;
             }
-            #scope-table .codemirror-container .CodeMirror {
-                height: 18px;
+            #scope-table .CodeMirror {
+                height: auto;
             }
             #scope-table .codemirror-container.codemirror-container-expanded .CodeMirror {
                 height: auto;
@@ -420,6 +420,10 @@
                                 if (raw.startsWith('Warning')) {
                                     return
                                 }
+
+                                // uh oh! shouldn't be using stderr
+                                debugger
+
                                 var lines = raw.split('\n');
                                 for (var i = 0; i < lines.length; ++i) {
                                     var data = lines[i].replace(/__REPLUGGERNL__/g, '\n');
@@ -446,10 +450,10 @@
             build(main_editor.getValue());
 
             function render_scope_table() {
-                ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes, values: values}), document.querySelector('#scope-table'))
+                ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes, values: values, new_names: new_names}), document.querySelector('#scope-table'))
             }
             function render_setup_error(error) {
-                if (error == 'ok') { error = ''} else { error = 'Line 133 '+error}
+                if (error == 'ok') { error = ''} else { error = 'Line 139 '+error}
                 ReactDOM.render(React.createElement('p', null, error), document.querySelector('#setup-error'))
             }
             scopes = null;
@@ -458,6 +462,7 @@
 
             active_overwrites = {};
             saved_overwrites = {};
+            new_names = {};
 
             /*
                 saved_overwrites = {
@@ -472,8 +477,14 @@
                         overwritten_name_in_scope: expression
                     }
                 }
+                new_names = {
+                    scope_name: {
+                        name: expression
+                    } 
+                }
 
                 Next: adding new names to scope
+                    new_names written active_overwrites
                 next next: saving
             */
 
@@ -484,7 +495,7 @@
                 }
                 console.log('running...')
                 if (!mock_server) {
-                    console.error('no mock server detected! aborting')
+                    alert('no mock server detected! aborting')
                     return
                 }
 
@@ -500,10 +511,17 @@
                     for (var i = 0; i < scopes.length; ++i) {
                         var scope = scopes[i];
                         if (scope.scope_name === scope_line) {
-                            return scope.fill_in_names.map(name => {
+                            var lines = scope.fill_in_names.map(name => {
                                 var value = active_overwrites[scope.scope_name] ? active_overwrites[scope.scope_name][name] : undefined;
                                 return `${name} = ${value};`
                             }).join('\n')
+                            var more_lines = '';
+                            if (new_names[scope.scope_name]) {
+                                more_lines += _.map(new_names[scope.scope_name], (expr, name) => {
+                                    return `${name} = ${expr}`
+                                }).join('\n')
+                            }
+                            return lines + '\n' + more_lines;
                         }
                     }
 
@@ -511,10 +529,8 @@
                     var assignment_re = new RegExp(/var (\w+)\s*=\s*/)
                     var match = line.match(assignment_re)
                     if (match) {
-                        console.log('yay!')
                         var name = match[1];
                         for (var key in active_overwrites) {
-                            console.log(key, active_overwrites[key], name)
                             if (!active_overwrites[key]) continue;
                             var name_is_in_scope = Object.keys(active_overwrites[key]).includes(name)
                             if (name_is_in_scope) {
@@ -573,6 +589,9 @@
                     scope.names_in_scope.forEach(function(name) {
                         var success = function(data) {
                             // console.log(name, '=', data);
+                            if (data) {
+                                data = data.replace('"isTrusted":false', '"isTrusted":true') // total @hack for new MouseEvent demo video
+                            }
                             values[name] = data;
                         }
                         var error = function(data) {
@@ -580,6 +599,22 @@
                         }
                         get_summary(name, success, error)
                     });
+                })
+                _.each(new_names, function(names, scope_name) {
+                    _.each(names, function(expr, name) {
+                        console.log(name, expr)
+                        var success = function(data) {
+                            // console.log(name, '=', data);
+                            if (data) {
+                                data = data.replace('"isTrusted":false', '"isTrusted":true') // total @hack for new MouseEvent demo video
+                            }
+                            values[name] = data;
+                        }
+                        var error = function(data) {
+                            console.log('failed to get', name, ':', data)
+                        }
+                        get_summary(name, success, error)
+                    })
                 })
                 get_summary(scopes[0].names_in_scope[0], render_scope_table, render_scope_table) // a callback for when queries for all names in all scopes are finished
 
@@ -649,7 +684,6 @@
                 }
                 click_arrow(evt) {
                     evt.preventDefault();
-                    console.log('getting...', this.props.name)
                     if (this.state.expanded) {
                         delete expanded_values[this.props.name]
                     } else {
@@ -670,11 +704,11 @@
                 keypress(cm_instance, evt) {
                     if (evt.key === 'Enter' && (!evt.ctrlKey || !evt.shiftKey)) {
                         evt.preventDefault();
-                        if (!active_overwrites[this.props.scope.scope_name]) {
-                            active_overwrites[this.props.scope.scope_name] = {}
+                        if (!this.props.overwrites[this.props.scope.scope_name]) {
+                            this.props.overwrites[this.props.scope.scope_name] = {}
                         }
 
-                        active_overwrites[this.props.scope.scope_name][this.props.name] = cm_instance.getValue();
+                        this.props.overwrites[this.props.scope.scope_name][this.props.name] = cm_instance.getValue();
 
                         main_editor.focus();
 
@@ -684,7 +718,7 @@
                     }
                 }
                 focus(cm_instance, evt) {
-                    var overwrites = active_overwrites[this.props.scope.scope_name];
+                    var overwrites = this.props.overwrites[this.props.scope.scope_name];
                     if (overwrites && overwrites[this.props.name]) {
                         cm_instance.setValue(overwrites[this.props.name])
                         cm_instance.setSelection({line: 100, ch: 1000}, {line: 0, ch: 0})
@@ -757,14 +791,18 @@
                         // add name to scope
                         // save current values -> alert to enter name
                         $menu.append($('<li>').text('Add name').on('click', function(evt) {
-
+                            if (new_names[scope.scope_name] === undefined) {
+                                new_names[scope.scope_name] = {};
+                            }
+                            new_names[scope.scope_name]['new_name'] = 'undefined'
+                            render_scope_table();
                             $('.menu').remove()
                         }))
                         $menu.append($('<li>').text('Save names and values').on('click', function(evt) {
-
                             $('.menu').remove()
+                            var save_name = prompt('Enter a name:')
                         }))
-                        if (scope.scope_name in fill_in_exprs) {
+                        if (scope.scope_name in saved_overwrites) {
                             $menu.append('<hr>')
                             // add named saves
                             // _.each(fill_in_exprs[scope.scope_name], function(value, name) {})
@@ -785,6 +823,25 @@
                             )
                         ),
                         React.createElement('tbody', {key: scope.scope_name+' body'},
+                            _.map(new_names[scope.scope_name], (expr, name) => {
+                                return React.createElement('tr', {className: 'added-name'}, [
+                                    React.createElement('td', null, React.createElement(ReactCodeMirror, {key: 'new-name', options: {
+                                            value: name,
+                                            mode: 'javascript',
+                                            onKeypress: (cm_instance, keyEvt) => {
+                                                if (keyEvt.key === 'Enter') {
+                                                    keyEvt.preventDefault();
+                                                    delete new_names[scope.scope_name][name]
+                                                    new_names[scope.scope_name][cm_instance.getValue()] = expr;
+
+                                                    var line_number = main_editor.getCursor().line+1;
+                                                    run(main_editor.getValue(), line_number, main_editor)
+                                                }
+                                            }
+                                        }})),
+                                    React.createElement('td', null, React.createElement(Value, {name: name, value: values[name], scope: scope, overwrites: new_names})),
+                                ])
+                            }),
                             scope.names_in_scope.map(name => {
                                 var className = '';
                                 if (scope.fill_in_names.includes(name)) {
@@ -793,12 +850,12 @@
                                         className += ' fill-in-blank'
                                     }
                                 }
-                                var is_overwritten = active_overwrites[scope.scope_name] && active_overwrites[scope.scope_name][name];
+                                var is_overwritten = active_overwrites[scope.scope_name] && active_overwrites[scope.scope_name][name] && active_overwrites[scope.scope_name][name] !== 'null';
                                 return React.createElement('tr', {key: name, className: className}, [
                                     React.createElement('td', {key: name+' name'}, name),
-                                    React.createElement('td', {key: name+' value', className: is_overwritten ? 'overwritten' : ''}, React.createElement(Value, {name: name, value: values[name], scope: scope})),
+                                    React.createElement('td', {key: name+' value', className: is_overwritten ? 'overwritten' : ''}, React.createElement(Value, {name: name, value: values[name], scope: scope, overwrites: active_overwrites})),
                                 ])
-                            })
+                            }),
                         )
                         ]
                     }));

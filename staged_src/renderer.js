@@ -2,9 +2,10 @@
 if (typeof window === 'undefined') {
     const Window = require('window');
     window = new Window();
-    navigator = window.navigator;
-    document = window.document;
 }
+navigator = window.navigator;
+document = window.document;
+
 const $ = require('jquery');
 const _ = require('underscore');
 const React = require('react');
@@ -63,7 +64,13 @@ class Move_Drag {
     }
 }
 
-class Resize_Drag {}
+class Resize_Drag {
+    constructor(ui_block) {
+        this.ui_block = ui_block;
+        this.x = 0;
+        this.y = 0;
+    }
+}
 
 class Resize_Code_Drag {}
 
@@ -259,6 +266,11 @@ function reset_dragging(evt) {
     resize_drag = null;
     move_drag = null;
     resize_code_drag = null;
+}
+
+function create_ui_block() {
+    var block = interpreter.create_block(null, '1+1');
+    return create_and_render_block(block, 0,0);
 }
 
 function create_and_render_block(block, row, column) {
@@ -587,6 +599,8 @@ function create_and_render_block(block, row, column) {
     $('#blocks').append($block);
 
     code_mirror.refresh(); // refresh in order to make text show up properly
+
+    return ui_block;
 };
 module.exports.create_and_render_block = create_and_render_block;
 
@@ -713,3 +727,20 @@ function fade_background_color($element, alpha, color) {
     $element.css('background-color', new_color);
     setTimeout(fade_background_color, 1000 / 60, $element, alpha, color);
 }
+
+document.body.createTextRange = function() {
+        return {
+            setEnd: function(){},
+            setStart: function(){},
+            getBoundingClientRect: function(){
+                return {right: 0};
+            },
+            getClientRects: function(){
+                return {
+                    length: 0,
+                    left: 0,
+                    right: 0
+                }
+            }
+        }
+    }

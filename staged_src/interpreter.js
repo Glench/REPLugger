@@ -377,14 +377,14 @@ function python_declare(block) {
         success_queue.push(success);
         fail_queue.push(fail);
         python_exec(python_filter_function_declaration);
-        console.log('declaring python filter:', python_filter_function_declaration);
+        // console.log('declaring python filter:', python_filter_function_declaration);
     }
 
     if (python_function_declaration) {
         success_queue.push(success);
         fail_queue.push(fail);
         python_exec(python_function_declaration);
-        console.log('declaring python:', python_function_declaration);
+        // console.log('declaring python:', python_function_declaration);
     }
 }
 
@@ -435,7 +435,7 @@ function python_run(block) {
 
     python_code = `${block.name} = ${python_expression}`;
 
-    console.log('running python:', python_code);
+    // console.log('running python:', python_code);
 
     var no_op = function () {};
     var success = function (data) {
@@ -528,7 +528,7 @@ function change_name(block, name) {
 
         python_code += `${new_filter_function_name} = ${old_filter_function_name}; del ${old_filter_function_name}; ${python_code}`;
     }
-    console.log('executing python in `change_name`:', python_code);
+    // console.log('executing python in `change_name`:', python_code);
     var callback = () => {};
     success_queue.push(callback);
     fail_queue.push(callback);
@@ -639,7 +639,7 @@ function remove_filter_clause(block) {
     success_queue.push(no_op);
     fail_queue.push(no_op);
 
-    console.log('executing python code from `remove_filter_clause`:', python_code);
+    // console.log('executing python code from `remove_filter_clause`:', python_code);
     python_exec(python_code);
 
     python_declare(block);
