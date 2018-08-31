@@ -65,8 +65,8 @@ class Move_Drag {
 }
 
 class Resize_Drag {
-    constructor(ui_block) {
-        this.ui_block = ui_block;
+    constructor() {
+        this.ui_block = create_ui_block();
         this.x = 0;
         this.y = 0;
     }

@@ -768,7 +768,7 @@
                     var height = $(window).height() - $('#current-line').outerHeight() - $('#setup-error').outerHeight();
                     $('#scope-table').height(height - 6);
 
-                    document.querySelector('#scope-table').scrollTop = 999999;
+                    // document.querySelector('#scope-table').scrollTop = 999999;
                 }
                 componentDidUpdate() {
                     this.update_height();
@@ -805,8 +805,9 @@
                                 }
 
                                 saved_overwrites[scope.scope_name][save_name] = {}
-                                _.extend(saved_overwrites[scope.scope_name][save_name], active_overwrites[scope.scope_name], saved_overwrites[scope.scope_name])
-                                render_scope_table()
+                                _.extend(saved_overwrites[scope.scope_name][save_name], active_overwrites[scope.scope_name], saved_overwrites[scope.scope_name], new_names[scope.scope_name])
+
+                                render_scope_table();
                             })
                         }))
                         if (scope.scope_name in saved_overwrites) {
@@ -816,6 +817,14 @@
                                 $menu.append($('<li>'+save_name+'</li>').on('click', function() {
                                     $('.menu').remove()
                                     active_overwrites[scope.scope_name] = saved_overwrites[scope.scope_name][save_name]
+
+                                    // remove @demo code below!
+                                    _.each(active_overwrites[scope.scope_name], function(expr, name) {
+                                        if (name == 'resize_drag') {
+                                            new_names[scope.scope_name]['resize_drag'] = expr;
+                                        }
+                                    })
+                                    // remove @demo code above!
 
                                     var line_number = main_editor.getCursor().line+1;
                                     run(main_editor.getValue(), line_number, main_editor)
@@ -865,7 +874,7 @@
                                         className += ' fill-in-blank'
                                     }
                                 }
-                                var is_overwritten = active_overwrites[scope.scope_name] && active_overwrites[scope.scope_name][name] && active_overwrites[scope.scope_name][name] !== 'null';
+                                var is_overwritten = active_overwrites[scope.scope_name] && active_overwrites[scope.scope_name][name] // && active_overwrites[scope.scope_name][name] !== 'null';
                                 return React.createElement('tr', {key: name, className: className}, [
                                     React.createElement('td', {key: name+' name'}, name),
                                     React.createElement('td', {key: name+' value', className: is_overwritten ? 'overwritten' : ''}, React.createElement(Value, {name: name, value: values[name], scope: scope, overwrites: active_overwrites})),
