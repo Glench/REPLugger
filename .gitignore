@@ -1,3 +1,7 @@
+# REPLugger-specific
+/mock_environment
+/last_run.js
+
 # Logs
 logs
 *.log
