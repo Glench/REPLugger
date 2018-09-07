@@ -316,7 +316,7 @@
 
             var current_file_name = 'renderer.js';
             main_editor = CodeMirror(document.querySelector('#main-editor'), {
-                value: fs.readFileSync('/Users/glen/code/REPLugger/staged_src/'+current_file_name, 'utf-8').toString(),
+                value: fs.readFileSync('staged_src/'+current_file_name, 'utf-8').toString(),
                 mode: 'javascript',
                 lineNumbers: true,
                 styleActiveLine: true,
