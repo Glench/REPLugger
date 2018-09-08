@@ -316,7 +316,7 @@
 
             var current_file_name = 'renderer.js';
             main_editor = CodeMirror(document.querySelector('#main-editor'), {
-                value: fs.readFileSync('staged_src/'+current_file_name, 'utf-8').toString(),
+                value: fs.readFileSync(__dirname + '/staged_src/'+current_file_name, 'utf-8').toString(),
                 mode: 'javascript',
                 lineNumbers: true,
                 styleActiveLine: true,
@@ -395,7 +395,7 @@
                                 console.error('error starting mock environment:', data)
                             })
 
-                            mock_server = spawn('node', [current_file_name], {cwd: '/Users/glen/code/REPLugger/mock_environment/'});
+                            mock_server = spawn('node', [current_file_name], {cwd: __dirname + '/mock_environment/'});
 
                             mock_server.stdout.setEncoding('utf-8')
                             mock_server.stdout.on('data', function(buffer) {
@@ -893,8 +893,8 @@
                 render() {
                     return React.createElement('div', null, [
                         React.createElement('h2', {key: 'line-#'}, `Line #${this.props.line_number}`),
-                        React.createElement(ReactCodeMirror, {className: 'current-line-src', options: {value: this.props.src, mode: 'javascript'}}),
-                        React.createElement(ReactCodeMirror, {className: 'current-line-output', options: {value: this.props.error || this.props.value}, style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
+                        React.createElement(ReactCodeMirror, {key: 'line-src', className: 'current-line-src', options: {value: this.props.src, mode: 'javascript'}}),
+                        React.createElement(ReactCodeMirror, {key: 'line-output', className: 'current-line-output', options: {value: this.props.error || this.props.value}, style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
                         // React.createElement(Value, {name: this.props.src, value: this.props.error || this.props.value}),
                     ])
                 }

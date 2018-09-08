@@ -6,3 +6,11 @@ REPLugger is a research prototype code editor that integrates the features of a 
 You can view [my website](http://glench.com) to see more of my projects. You can also sign up for my [UI Design for the Future of Programming newsletter](https://tinyletter.com/Flowsheets) to be updated about my research and analysis of programming.
 
 A note: REPLugger is research code meant to demonstrate an idea, not to be well-engineered. You're probably better off trying to invent your own way of making the features possible than to figure out how I did it.
+
+## Installing
+
+`npm install` / `yarn`
+
+## Running
+
+`npm start` / `yarn start`
