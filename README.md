@@ -14,3 +14,5 @@ A note: REPLugger is research code meant to demonstrate an idea, not to be well-
 ## Running
 
 `npm start` / `yarn start`
+
+I would not recommend trying to run this project since it was made for demo purposes only, not to be a robust editing experience.
