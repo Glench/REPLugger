@@ -289,616 +289,618 @@
         </script>
         <script type="text/javascript">
 
-            const $ = require('jquery');
-            const fs = require('fs');
-            const {scopes_and_names, prepare_current_file_to_act_as_server, add_parens} = require('./mock_environment')
-            const {dialog} = require('electron').remote;
-            const exec = require('child_process').exec;
-            const {spawn, spawnSync} = require('child_process')
-            const _ = require('underscore')
+const $ = require('jquery');
+const fs = require('fs');
+const {scopes_and_names, prepare_current_file_to_act_as_server, add_parens} = require('./mock_environment')
+const {dialog} = require('electron').remote;
+const exec = require('child_process').exec;
+const {spawn, spawnSync} = require('child_process')
+const _ = require('underscore')
 
 
-            function assert(condition) {
-                if (!condition) {
-                    console.error('assert called! going into debugger...')
-                    debugger
-                    // throw 'Assertion failed!'
+function assert(condition) {
+    if (!condition) {
+        console.error('assert called! going into debugger...')
+        debugger
+        // throw 'Assertion failed!'
+    }
+}
+
+function case_insensitive_sort(a,b,) {
+    return a.toLowerCase().localeCompare(b.toLowerCase());
+}
+
+
+
+// --- set up editor ---
+
+var current_file_name = 'renderer.js';
+main_editor = CodeMirror(document.querySelector('#main-editor'), {
+    value: fs.readFileSync(__dirname + '/staged_src/'+current_file_name, 'utf-8').toString(),
+    mode: 'javascript',
+    lineNumbers: true,
+    styleActiveLine: true,
+    indentUnit: 4,
+    // keyMap: 'vim',
+    matchBrackets: true,
+    showCursorWhenSelecting: true,
+    inputStyle: 'contenteditable',
+});
+CodeMirror.Vim.map('jj', '<Esc>', 'insert')
+
+$('.CodeMirror').height($(window).height() - 2)
+main_editor.refresh() // need to refresh after editor height change to render all lines
+
+main_editor.on('cursorActivity', _.debounce(cursor_activity, 200));
+function cursor_activity(codemirror_instance) {
+    var line_number = codemirror_instance.getCursor().line+1;
+    run(codemirror_instance.getValue(), line_number, codemirror_instance)
+}
+
+// NEXT STEPS:
+//    - `for` loop / while loop / forEach / map recording of values
+
+// Tricky things to deal with:
+//    - since we're using stdout/stderr to communicate, any time the original program writes to those streams it gets confused for a server message. console.log messes up REPLugger, for example
+//    - how do we get the correct value of 'this' in different scopes?
+
+// TODO: get command+o working
+// https://github.com/electron/electron/blob/master/docs/api/dialog.md
+
+
+
+// build initially, also as person types changes to file since they may create a new name as they type.
+// could be smart about seeing if there's a new name, but parsing names is time-consuming I believe 
+var mock_server = null;
+success_callback_queue = [];
+error_callback_queue = [];
+$(window).on('beforeunload', function() {
+    console.log('killing!')
+    mock_server.kill()
+});
+
+function build(current_file_src) {
+    // 0. prepare special version of edited file, with server code / recorded values
+    // 1. remove all files in staging area (except .babelrc), then copy other files to staging area, 'staged_src'
+    // 2. run "compilation", `babel staged_src/ --out-dir mock_environment`
+    // 3. report error if compilation failed, line number may be tricky
+    console.log('building...')
+    console.time('build');
+    var scopes = scopes_and_names(current_file_src, current_file_src.split('\n').length-1);
+    var mock_environment_server_src = prepare_current_file_to_act_as_server(current_file_src, scopes[0].names_in_scope)
+
+    var build_command = exec('sh build_mock_environment.sh',
+        (error, stdout, stderr) => {
+            // console.log('stdout', stdout);
+            // console.log('stderr', stderr);
+            // if (error !== null) {
+            //     console.log(`exec error: ${error}`);
+            //     return
+            // }
+
+
+            // overwrite file the user is currently editing with a special one that runs a server we can query for data
+            fs.writeFile(`mock_environment/${current_file_name}`, mock_environment_server_src, function() {
+                if (mock_server) {
+                    mock_server.kill('SIGKILL');
+                    success_callback_queue = []
+                    error_callback_queue = []
                 }
-            }
 
-            function case_insensitive_sort(a,b,) {
-                return a.toLowerCase().localeCompare(b.toLowerCase());
-            }
+                success_callback_queue.push(function(data) {
+                    console.log('building done')
+                    console.timeEnd('build')
+                })
+                error_callback_queue.push(function(data) {
+                    console.error('error starting mock environment:', data)
+                })
 
+                mock_server = spawn('node', [current_file_name], {cwd: __dirname + '/mock_environment/'});
 
-
-            // --- set up editor ---
-
-            var current_file_name = 'renderer.js';
-            main_editor = CodeMirror(document.querySelector('#main-editor'), {
-                value: fs.readFileSync(__dirname + '/staged_src/'+current_file_name, 'utf-8').toString(),
-                mode: 'javascript',
-                lineNumbers: true,
-                styleActiveLine: true,
-                indentUnit: 4,
-                // keyMap: 'vim',
-                matchBrackets: true,
-                showCursorWhenSelecting: true,
-                inputStyle: 'contenteditable',
-            });
-            CodeMirror.Vim.map('jj', '<Esc>', 'insert')
-
-            $('.CodeMirror').height($(window).height() - 2)
-            main_editor.refresh() // need to refresh after editor height change to render all lines
-
-            main_editor.on('cursorActivity', _.debounce(cursor_activity, 200));
-            function cursor_activity(codemirror_instance) {
-                var line_number = codemirror_instance.getCursor().line+1;
-                run(codemirror_instance.getValue(), line_number, codemirror_instance)
-            }
-
-            // NEXT STEPS:
-            //    - `for` loop / while loop / forEach / map recording of values
-
-            // Tricky things to deal with:
-            //    - since we're using stdout/stderr to communicate, any time the original program writes to those streams it gets confused for a server message. console.log messes up REPLugger, for example
-            //    - how do we get the correct value of 'this' in different scopes?
-
-            // TODO: get command+o working
-            // https://github.com/electron/electron/blob/master/docs/api/dialog.md
-
-
-
-            // build initially, also as person types changes to file since they may create a new name as they type.
-            // could be smart about seeing if there's a new name, but parsing names is time-consuming I believe 
-            var mock_server = null;
-            success_callback_queue = [];
-            error_callback_queue = [];
-            $(window).on('beforeunload', function() {
-                console.log('killing!')
-                mock_server.kill()
-            });
-
-            function build(current_file_src) {
-                // 0. prepare special version of edited file, with server code / recorded values
-                // 1. remove all files in staging area (except .babelrc), then copy other files to staging area, 'staged_src'
-                // 2. run "compilation", `babel staged_src/ --out-dir mock_environment`
-                // 3. report error if compilation failed, line number may be tricky
-                console.log('building...')
-                console.time('build');
-                var scopes = scopes_and_names(current_file_src, current_file_src.split('\n').length-1);
-                var mock_environment_server_src = prepare_current_file_to_act_as_server(current_file_src, scopes[0].names_in_scope)
-
-                var build_command = exec('sh build_mock_environment.sh',
-                    (error, stdout, stderr) => {
-                        // console.log('stdout', stdout);
-                        // console.log('stderr', stderr);
-                        // if (error !== null) {
-                        //     console.log(`exec error: ${error}`);
-                        //     return
-                        // }
-
-
-                        // overwrite file the user is currently editing with a special one that runs a server we can query for data
-                        fs.writeFile(`mock_environment/${current_file_name}`, mock_environment_server_src, function() {
-                            if (mock_server) {
-                                mock_server.kill('SIGKILL');
-                                success_callback_queue = []
-                                error_callback_queue = []
-                            }
-
-                            success_callback_queue.push(function(data) {
-                                console.log('building done')
-                                console.timeEnd('build')
-                            })
-                            error_callback_queue.push(function(data) {
-                                console.error('error starting mock environment:', data)
-                            })
-
-                            mock_server = spawn('node', [current_file_name], {cwd: __dirname + '/mock_environment/'});
-
-                            mock_server.stdout.setEncoding('utf-8')
-                            mock_server.stdout.on('data', function(buffer) {
-                                var lines = buffer.toString().split('\n');
-                                for (var i = 0; i < lines.length; ++i) {
-                                    var data = lines[i].replace(/__REPLUGGERNL__/g, '\n');
-                                    if (!data) {
-                                        if (i != lines.length-1) { console.error('got an unexpected blank line in the middle of stdout', lines) }
-                                        return
-                                    }
-                                    assert(success_callback_queue.length > 0 && error_callback_queue.length > 0)
-                                    var success = success_callback_queue.shift();
-                                    var error = error_callback_queue.shift();
-                                    if (data.startsWith('replugger_error:')) {
-                                        data = data.replace('replugger_error:', '')
-                                        error(data)
-                                    } else {
-                                        success(data);
-                                    }
-                                }
-                            })
-
-                            mock_server.stderr.on('data', function(buffer) { 
-                                var raw = buffer.toString();
-                                if (raw.startsWith('Warning')) {
-                                    return
-                                }
-
-                                // uh oh! shouldn't be using stderr
-                                debugger
-
-                                var lines = raw.split('\n');
-                                for (var i = 0; i < lines.length; ++i) {
-                                    var data = lines[i].replace(/__REPLUGGERNL__/g, '\n');
-                                    if (!data) {
-                                        if (i != lines.length-1) { console.error('got an unexpected blank line in the middle of stderr:', lines) }
-                                        return
-                                    }
-                                    assert(success_callback_queue.length > 0 && error_callback_queue.length > 0)
-
-                                    var error = error_callback_queue.shift();
-                                    success_callback_queue.shift();
-                                    error(data)
-                                }
-                            })
-                            mock_server.on('exit', function() { 
-                                console.log('mock environment process ended!')
-                                mock_server = null;
-                            })
-
-
-                        });
-                    });
-            }
-            build(main_editor.getValue());
-
-            function render_scope_table() {
-                ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes, values: values, new_names: new_names}), document.querySelector('#scope-table'))
-            }
-            function render_setup_error(error) {
-                if (error == 'ok') { error = ''} else { error = 'Line 139 '+error}
-                ReactDOM.render(React.createElement('p', null, error), document.querySelector('#setup-error'))
-            }
-            scopes = null;
-            values = {};
-            expanded_values = {};
-
-            active_overwrites = {};
-            saved_overwrites = {};
-            new_names = {};
-
-            /*
-                saved_overwrites = {
-                    scope_name: {
-                        name_of_overwrite: {
-                            overwritten_name_in_scope: expression
+                mock_server.stdout.setEncoding('utf-8')
+                mock_server.stdout.on('data', function(buffer) {
+                    var lines = buffer.toString().split('\n');
+                    for (var i = 0; i < lines.length; ++i) {
+                        var data = lines[i].replace(/__REPLUGGERNL__/g, '\n');
+                        if (!data) {
+                            if (i != lines.length-1) { console.error('got an unexpected blank line in the middle of stdout', lines) }
+                            return
+                        }
+                        assert(success_callback_queue.length > 0 && error_callback_queue.length > 0)
+                        var success = success_callback_queue.shift();
+                        var error = error_callback_queue.shift();
+                        if (data.startsWith('replugger_error:')) {
+                            data = data.replace('replugger_error:', '')
+                            error(data)
+                        } else {
+                            success(data);
                         }
                     }
-                }
-                active_overwrites = {
-                    scope_name: {
-                        overwritten_name_in_scope: expression
+                })
+
+                mock_server.stderr.on('data', function(buffer) { 
+                    var raw = buffer.toString();
+                    if (raw.startsWith('Warning')) {
+                        return
                     }
-                }
-                new_names = {
-                    scope_name: {
-                        name: expression
-                    } 
-                }
 
-            */
-
-            function run(current_file_src, line_number, codemirror) {
-                if (success_callback_queue.length > 1) {
-                    console.log('not running because waiting')
+                    // uh oh! shouldn't be using stderr
+                    console.log("don't use stderr! debug output:", raw)
                     return
-                }
-                console.log('running...')
-                if (!mock_server) {
-                    alert('no mock server detected! aborting')
-                    return
-                }
+                    // debugger
 
-                scopes = scopes_and_names(current_file_src, line_number);
-                values = {};
-
-                // run script up till current line
-                var src_till_current_line = current_file_src.split('\n').slice(0,line_number);
-                // if there are overwrites, modify the source to include them
-                src_till_current_line = src_till_current_line.map(line => {
-                    // overwrite any arguments to functions by creating variables
-                    var scope_line = line.trim();
-                    for (var i = 0; i < scopes.length; ++i) {
-                        var scope = scopes[i];
-                        if (scope.scope_name === scope_line) {
-                            var lines = scope.fill_in_names.map(name => {
-                                var value = active_overwrites[scope.scope_name] ? active_overwrites[scope.scope_name][name] : undefined;
-                                return `${name} = ${value};`
-                            }).join('\n')
-                            var more_lines = '';
-                            if (new_names[scope.scope_name]) {
-                                more_lines += _.map(new_names[scope.scope_name], (expr, name) => {
-                                    return `${name} = ${expr}`
-                                }).join('\n')
-                            }
-                            return lines + '\n' + more_lines;
+                    var lines = raw.split('\n');
+                    for (var i = 0; i < lines.length; ++i) {
+                        var data = lines[i].replace(/__REPLUGGERNL__/g, '\n');
+                        if (!data) {
+                            if (i != lines.length-1) { console.error('got an unexpected blank line in the middle of stderr:', lines) }
+                            return
                         }
-                    }
+                        assert(success_callback_queue.length > 0 && error_callback_queue.length > 0)
 
-                    // replace any overwritten values in assignment statements
-                    var assignment_re = new RegExp(/var (\w+)\s*=\s*/)
-                    var match = line.match(assignment_re)
-                    if (match) {
-                        var name = match[1];
-                        for (var key in active_overwrites) {
-                            if (!active_overwrites[key]) continue;
-                            var name_is_in_scope = Object.keys(active_overwrites[key]).includes(name)
-                            if (name_is_in_scope) {
-                                var left_assign = line.split('=')[0]
-                                return left_assign + '= ' + active_overwrites[key][name]
-                            }
-                        }
+                        var error = error_callback_queue.shift();
+                        success_callback_queue.shift();
+                        error(data)
                     }
-                    return line;
+                })
+                mock_server.on('exit', function() { 
+                    console.log('mock environment process ended!')
+                    mock_server = null;
+                })
+
+
+            });
+        });
+}
+build(main_editor.getValue());
+
+function render_scope_table() {
+    ReactDOM.render(React.createElement(ScopeTable, {scopes: scopes, values: values, new_names: new_names}), document.querySelector('#scope-table'))
+}
+function render_setup_error(error) {
+    if (error == 'ok') { error = ''} else { error = error}
+    ReactDOM.render(React.createElement('p', null, error), document.querySelector('#setup-error'))
+}
+scopes = null;
+values = {};
+expanded_values = {};
+
+active_overwrites = {};
+saved_overwrites = {};
+new_names = {};
+
+/*
+    saved_overwrites = {
+        scope_name: {
+            name_of_overwrite: {
+                overwritten_name_in_scope: expression
+            }
+        }
+    }
+    active_overwrites = {
+        scope_name: {
+            overwritten_name_in_scope: expression
+        }
+    }
+    new_names = {
+        scope_name: {
+            name: expression
+        } 
+    }
+
+*/
+
+function run(current_file_src, line_number, codemirror) {
+    if (success_callback_queue.length > 1) {
+        console.log('not running because waiting')
+        return
+    }
+    console.log('running...')
+    if (!mock_server) {
+        alert('no mock server detected! aborting')
+        return
+    }
+
+    scopes = scopes_and_names(current_file_src, line_number);
+    values = {};
+
+    // run script up till current line
+    var src_till_current_line = current_file_src.split('\n').slice(0,line_number);
+    // if there are overwrites, modify the source to include them
+    src_till_current_line = src_till_current_line.map(line => {
+        // overwrite any arguments to functions by creating variables
+        var scope_line = line.trim();
+        for (var i = 0; i < scopes.length; ++i) {
+            var scope = scopes[i];
+            if (scope.scope_name === scope_line) {
+                var lines = scope.fill_in_names.map(name => {
+                    var value = active_overwrites[scope.scope_name] ? active_overwrites[scope.scope_name][name] : undefined;
+                    return `${name} = ${value};`
                 }).join('\n')
-                src_till_current_line = add_parens(src_till_current_line)
-                run_code(src_till_current_line,
-                    render_setup_error,
-                    render_setup_error
-                )
-
-
-                // eval current line
-                var selected_text = codemirror.getSelection();
-                if (selected_text && !selected_text.includes('\n')) {
-                    var original_current_line_src = selected_text.trim();
-                } else {
-                    var original_current_line_src = current_file_src.split('\n')[line_number-1].trim();
+                var more_lines = '';
+                if (new_names[scope.scope_name]) {
+                    more_lines += _.map(new_names[scope.scope_name], (expr, name) => {
+                        return `${name} = ${expr}`
+                    }).join('\n')
                 }
-                var modified_line_src = original_current_line_src;
-                if (modified_line_src.includes('=') && !modified_line_src.includes('==') && !modified_line_src.includes('!=')) { // @Robustness: watch for boolean expressions with ==
-                    modified_line_src = modified_line_src.split('=')[1];
-                }
-                if (modified_line_src.includes('return')) { // @Robustness: watch for expressions with inline 'return's e.g. map
-                    modified_line_src = modified_line_src.split('return')[1];
-                }
-                if (modified_line_src.includes('if (')) {
-                    // evaluate just the boolean test expression of an `if` statement
-                    // e.g. 'else if (dx % cell_width > cell_width / 3) {'.match(/if \((.*)\) {/)[1]
-                    // -> 'dx % cell_width > cell_width / 3'
-                    modified_line_src = modified_line_src.match(/if\s*\((.*)\)?\s?\{?$/)[1].replace(/\)?\s?\{?$/, '')
-                }
-                if (modified_line_src) {
-                    get_full(modified_line_src, function(data) { 
-                        // console.log('current line evaluates to:', data)
-
-                        var value = data.replace('{', '{\n').replace(/,,/g, ',\n').replace(/"function/g, 'function').replace(/"class/g, 'class');
-                        ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: value, line_number: line_number}), document.querySelector('#current-line'))
-                    }, function(error) {
-                        ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: error, line_number: line_number, error: error}), document.querySelector('#current-line'))
-                        // console.error('error when evaluating current line:', data)
-                    })
-                } else {
-                    ReactDOM.render(React.createElement(Current_Line, {src: '', value: '', line_number: line_number, error: ''}), document.querySelector('#current-line'))
-                }
-
-
-
-
-                scopes.forEach(function(scope) {
-                    scope.names_in_scope.forEach(function(name) {
-                        var success = function(data) {
-                            // console.log(name, '=', data);
-                            if (data) {
-                                data = data.replace('"isTrusted":false', '"isTrusted":true') // total @hack for new MouseEvent demo video
-                            }
-                            values[name] = data;
-                        }
-                        var error = function(data) {
-                            console.log('failed to get', name, ':', data)
-                        }
-                        get_summary(name, success, error)
-                    });
-                })
-                _.each(new_names, function(names, scope_name) {
-                    _.each(names, function(expr, name) {
-                        var success = function(data) {
-                            // console.log(name, '=', data);
-                            if (data) {
-                                data = data.replace('"isTrusted":false', '"isTrusted":true') // total @hack for new MouseEvent demo video
-                            }
-                            values[name] = data;
-                        }
-                        var error = function(data) {
-                            console.log('failed to get', name, ':', data)
-                        }
-                        get_summary(name, success, error)
-                    })
-                })
-                get_summary(scopes[0].names_in_scope[0], render_scope_table, render_scope_table) // a callback for when queries for all names in all scopes are finished
-
-
+                return lines + '\n' + more_lines;
             }
-            function get_summary(name, success, error) {
-                success = success || function(data) {
-                    console.log(name, '=', data)
-                }
-                error = error || function(data) {
-                    console.log('failed to get', name, ':', data)
-                }
-                success_callback_queue.push(success);
-                error_callback_queue.push(error);
-                mock_server.stdin.write(`replugger_summary_info: ${name}\n`)
-            }
-            function get_full(name, success, error) {
-                success = success || function(data) {
-                    console.log(name, '=', data)
-                }
-                error = error || function(data) {
-                    console.log('failed to get', name, ':', data)
-                }
-                success_callback_queue.push(success);
-                error_callback_queue.push(error);
-                mock_server.stdin.write(`replugger_full_info: ${name}\n`)
-            }
-            function run_code(code, success, error) {
-                code = code.replace(/(var|const|return)\s/g, '') // because of how eval works, want to make sure variables are assigned to global
-                fs.writeFile('last_run.js', code, function() {})
-                code = code.replace(/\n/g, '__REPLUGGERNL__')
+        }
 
-                success = success || function(data) {
-                    console.log('successfully ran code')
+        // replace any overwritten values in assignment statements
+        var assignment_re = new RegExp(/var (\w+)\s*=\s*/)
+        var match = line.match(assignment_re)
+        if (match) {
+            var name = match[1];
+            for (var key in active_overwrites) {
+                if (!active_overwrites[key]) continue;
+                var name_is_in_scope = Object.keys(active_overwrites[key]).includes(name)
+                if (name_is_in_scope) {
+                    var left_assign = line.split('=')[0]
+                    return left_assign + '= ' + active_overwrites[key][name]
                 }
-                error = error || function(data) {
-                    console.log('running code error:', data)
+            }
+        }
+        return line;
+    }).join('\n')
+    src_till_current_line = add_parens(src_till_current_line)
+    run_code(src_till_current_line,
+        render_setup_error,
+        render_setup_error
+    )
+
+
+    // eval current line
+    var selected_text = codemirror.getSelection();
+    if (selected_text && !selected_text.includes('\n')) {
+        var original_current_line_src = selected_text.trim();
+    } else {
+        var original_current_line_src = current_file_src.split('\n')[line_number-1].trim();
+    }
+    var modified_line_src = original_current_line_src;
+    if (modified_line_src.includes('=') && !modified_line_src.includes('==') && !modified_line_src.includes('!=')) { // @Robustness: watch for boolean expressions with ==
+        modified_line_src = modified_line_src.split('=')[1];
+    }
+    if (modified_line_src.includes('return')) { // @Robustness: watch for expressions with inline 'return's e.g. map
+        modified_line_src = modified_line_src.split('return')[1];
+    }
+    if (modified_line_src.includes('if (')) {
+        // evaluate just the boolean test expression of an `if` statement
+        // e.g. 'else if (dx % cell_width > cell_width / 3) {'.match(/if \((.*)\) {/)[1]
+        // -> 'dx % cell_width > cell_width / 3'
+        modified_line_src = modified_line_src.match(/if\s*\((.*)\)?\s?\{?$/)[1].replace(/\)?\s?\{?$/, '')
+    }
+    if (modified_line_src) {
+        get_full(modified_line_src, function(data) { 
+            // console.log('current line evaluates to:', data)
+
+            var value = data.replace('{', '{\n').replace(/,,/g, ',\n').replace(/"function/g, 'function').replace(/"class/g, 'class');
+            ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: value, line_number: line_number}), document.querySelector('#current-line'))
+        }, function(error) {
+            ReactDOM.render(React.createElement(Current_Line, {src: original_current_line_src, value: error, line_number: line_number, error: error}), document.querySelector('#current-line'))
+            // console.error('error when evaluating current line:', data)
+        })
+    } else {
+        ReactDOM.render(React.createElement(Current_Line, {src: '', value: '', line_number: line_number, error: ''}), document.querySelector('#current-line'))
+    }
+
+
+
+
+    scopes.forEach(function(scope) {
+        scope.names_in_scope.forEach(function(name) {
+            var success = function(data) {
+                // console.log(name, '=', data);
+                if (data) {
+                    data = data.replace('"isTrusted":false', '"isTrusted":true') // total @hack for new MouseEvent demo video
                 }
-                success_callback_queue.push(success);
-                error_callback_queue.push(error);
-                mock_server.stdin.write(`replugger_run_code: ${code}\n`)
+                values[name] = data;
+            }
+            var error = function(data) {
+                console.log('failed to get', name, ':', data)
+            }
+            get_summary(name, success, error)
+        });
+    })
+    _.each(new_names, function(names, scope_name) {
+        _.each(names, function(expr, name) {
+            var success = function(data) {
+                // console.log(name, '=', data);
+                if (data) {
+                    data = data.replace('"isTrusted":false', '"isTrusted":true') // total @hack for new MouseEvent demo video
+                }
+                values[name] = data;
+            }
+            var error = function(data) {
+                console.log('failed to get', name, ':', data)
+            }
+            get_summary(name, success, error)
+        })
+    })
+    get_summary(scopes[0].names_in_scope[0], render_scope_table, render_scope_table) // a callback for when queries for all names in all scopes are finished
+
+
+}
+function get_summary(name, success, error) {
+    success = success || function(data) {
+        console.log(name, '=', data)
+    }
+    error = error || function(data) {
+        console.log('failed to get', name, ':', data)
+    }
+    success_callback_queue.push(success);
+    error_callback_queue.push(error);
+    mock_server.stdin.write(`replugger_summary_info: ${name}\n`)
+}
+function get_full(name, success, error) {
+    success = success || function(data) {
+        console.log(name, '=', data)
+    }
+    error = error || function(data) {
+        console.log('failed to get', name, ':', data)
+    }
+    success_callback_queue.push(success);
+    error_callback_queue.push(error);
+    mock_server.stdin.write(`replugger_full_info: ${name}\n`)
+}
+function run_code(code, success, error) {
+    code = code.replace(/(var|const|return)\s/g, '') // because of how eval works, want to make sure variables are assigned to global
+    fs.writeFile('last_run.js', code, function() {})
+    code = code.replace(/\n/g, '__REPLUGGERNL__')
+
+    success = success || function(data) {
+        console.log('successfully ran code')
+    }
+    error = error || function(data) {
+        console.log('running code error:', data)
+    }
+    success_callback_queue.push(success);
+    error_callback_queue.push(error);
+    mock_server.stdin.write(`replugger_run_code: ${code}\n`)
+}
+
+const Mousetrap = require('mousetrap');
+// Mousetrap.bind('command+g', () => { run(main_editor.getValue(), main_editor.getCursor().line+1)})
+Mousetrap.bind('command+b', () => { build(main_editor.getValue())} )
+Mousetrap.bind('command+s', () => {
+    fs.writeFile('staged_src/'+current_file_name, main_editor.getValue())
+})
+
+const {Menu, MenuItem} = require('electron').remote;
+var menu = new Menu();
+menu.append(new MenuItem({
+    label: 'Build',
+    accelerator: 'CmdOrCtrl+S',
+    click: () => { build(main_editor.getValue(), main_editor.getCursor().line+1) }
+}))
+
+class Value extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = {expanded: false}
+        this.keypress = this.keypress.bind(this);
+        this.click_arrow = this.click_arrow.bind(this);
+        this.change = this.change.bind(this);
+        this.focus = this.focus.bind(this);
+    }
+    click_arrow(evt) {
+        evt.preventDefault();
+        if (this.state.expanded) {
+            delete expanded_values[this.props.name]
+        } else {
+            get_full(this.props.name, function(value) {
+                    expanded_values[this.props.name] = value.replace('{', '{\n').replace(/,,/g, ',\n').replace(/"function/g, 'function').replace(/"class/g, 'class');
+                    render_scope_table()
+                }.bind(this),
+                function(value) {
+                    throw 'error expanding value for name: '+this.props.name
+                }.bind(this)
+            )
+        }
+        this.setState({expanded: !this.state.expanded})
+    }
+    change(value, cm_change) {
+        delete expanded_values[this.props.name];
+    }
+    keypress(cm_instance, evt) {
+        if (evt.key === 'Enter' && (!evt.ctrlKey || !evt.shiftKey)) {
+            evt.preventDefault();
+            if (!this.props.overwrites[this.props.scope.scope_name]) {
+                this.props.overwrites[this.props.scope.scope_name] = {}
             }
 
-            const Mousetrap = require('mousetrap');
-            // Mousetrap.bind('command+g', () => { run(main_editor.getValue(), main_editor.getCursor().line+1)})
-            Mousetrap.bind('command+b', () => { build(main_editor.getValue())} )
-            Mousetrap.bind('command+s', () => {
-                fs.writeFile('staged_src/'+current_file_name, main_editor.getValue())
+            this.props.overwrites[this.props.scope.scope_name][this.props.name] = cm_instance.getValue();
+
+            main_editor.focus();
+
+            var line_number = main_editor.getCursor().line+1;
+            run(main_editor.getValue(), line_number, main_editor)
+
+        }
+    }
+    focus(cm_instance, evt) {
+        var overwrites = this.props.overwrites[this.props.scope.scope_name];
+        if (overwrites && overwrites[this.props.name]) {
+            cm_instance.setValue(overwrites[this.props.name])
+            cm_instance.setSelection({line: 100, ch: 1000}, {line: 0, ch: 0})
+        }
+    }
+    render() {
+        var value = this.props.name in expanded_values ? expanded_values[this.props.name] : this.props.value;
+        if (typeof value === 'string') {
+            if (value.startsWith('"function') || value.startsWith('"class')) {
+                value = value.slice(1).slice(0,-1);
+            }
+            var should_expand = false;
+            if (value.startsWith('{')) {
+                should_expand = true;
+            }
+            if (value == '[]') {
+                should_expand = false;
+            } else if (value.startsWith('[')) {
+                should_expand = true;
+            }
+        }
+        return [
+            !should_expand ? null :
+            React.createElement('span', {className: 'expand-arrow', key: '>', onMouseDown: this.click_arrow}, this.state.expanded ? '▼' : '▶'),
+            React.createElement(ReactCodeMirror, {
+                key: 'codemirror',
+                className: 'codemirror-container ' + (this.state.expanded ? 'codemirror-container-expanded' : ''),
+                options: {
+                    value: value === undefined ? '' : value,
+                    mode: 'javascript',
+                    onChange: this.change,
+                    onKeypress: this.keypress,
+                    onFocus: this.focus,
+                },
             })
+        ]
+    }
+}
 
-            const {Menu, MenuItem} = require('electron').remote;
-            var menu = new Menu();
-            menu.append(new MenuItem({
-                label: 'Build',
-                accelerator: 'CmdOrCtrl+S',
-                click: () => { build(main_editor.getValue(), main_editor.getCursor().line+1) }
+
+class ScopeTable extends React.Component {
+    constructor(props) {
+        super(props)
+        this.menu_button_click = this.menu_button_click.bind(this);
+    }
+    update_height() {
+        // resize table and scroll to bottom
+        var height = $(window).height() - $('#current-line').outerHeight() - $('#setup-error').outerHeight();
+        $('#scope-table').height(height - 6);
+
+        // document.querySelector('#scope-table').scrollTop = 999999;
+    }
+    componentDidUpdate() {
+        this.update_height();
+    }
+    componentDidMount() {
+        this.update_height();
+    }
+    menu_button_click(scope) {
+        return (evt) => {
+            // menu already open
+            if ($('.menu').length > 0) {
+                $('.menu').remove();  
+                return
+            }
+
+            var $button = $(evt.target);
+            var $menu = $('<ul class="menu">');
+            $menu.css({top: $button.offset().top+10, left: $button.offset().left})
+            $menu.append($('<li>').text('Add name').on('click', function(evt) {
+                if (new_names[scope.scope_name] === undefined) {
+                    new_names[scope.scope_name] = {};
+                }
+                new_names[scope.scope_name]['new_name'] = 'undefined'
+                render_scope_table();
+                $('.menu').remove()
             }))
+            $menu.append($('<li>').text('Save names and values').on('click', function(evt) {
+                $('.menu').remove()
 
-            class Value extends React.Component {
-                constructor(props) {
-                    super(props);
-                    this.state = {expanded: false}
-                    this.keypress = this.keypress.bind(this);
-                    this.click_arrow = this.click_arrow.bind(this);
-                    this.change = this.change.bind(this);
-                    this.focus = this.focus.bind(this);
-                }
-                click_arrow(evt) {
-                    evt.preventDefault();
-                    if (this.state.expanded) {
-                        delete expanded_values[this.props.name]
-                    } else {
-                        get_full(this.props.name, function(value) {
-                                expanded_values[this.props.name] = value.replace('{', '{\n').replace(/,,/g, ',\n').replace(/"function/g, 'function').replace(/"class/g, 'class');
-                                render_scope_table()
-                            }.bind(this),
-                            function(value) {
-                                throw 'error expanding value for name: '+this.props.name
-                            }.bind(this)
-                        )
+                const prompt = require('electron-prompt');
+                prompt('Enter a name').then(save_name => {
+                    if (!saved_overwrites[scope.scope_name]) {
+                        saved_overwrites[scope.scope_name] = {}
                     }
-                    this.setState({expanded: !this.state.expanded})
-                }
-                change(value, cm_change) {
-                    delete expanded_values[this.props.name];
-                }
-                keypress(cm_instance, evt) {
-                    if (evt.key === 'Enter' && (!evt.ctrlKey || !evt.shiftKey)) {
-                        evt.preventDefault();
-                        if (!this.props.overwrites[this.props.scope.scope_name]) {
-                            this.props.overwrites[this.props.scope.scope_name] = {}
-                        }
 
-                        this.props.overwrites[this.props.scope.scope_name][this.props.name] = cm_instance.getValue();
+                    saved_overwrites[scope.scope_name][save_name] = {}
+                    _.extend(saved_overwrites[scope.scope_name][save_name], active_overwrites[scope.scope_name], saved_overwrites[scope.scope_name], new_names[scope.scope_name])
 
-                        main_editor.focus();
+                    render_scope_table();
+                })
+            }))
+            if (scope.scope_name in saved_overwrites) {
+                $menu.append('<hr>')
+                // add named saves
+                _.each(saved_overwrites[scope.scope_name], function(names, save_name) {
+                    $menu.append($('<li>'+save_name+'</li>').on('click', function() {
+                        $('.menu').remove()
+                        active_overwrites[scope.scope_name] = saved_overwrites[scope.scope_name][save_name]
+
+                        // remove @demo code below!
+                        _.each(active_overwrites[scope.scope_name], function(expr, name) {
+                            if (name == 'resize_drag') {
+                                new_names[scope.scope_name]['resize_drag'] = expr;
+                            }
+                        })
+                        // remove @demo code above!
 
                         var line_number = main_editor.getCursor().line+1;
                         run(main_editor.getValue(), line_number, main_editor)
+                    }))
+                })
 
-                    }
-                }
-                focus(cm_instance, evt) {
-                    var overwrites = this.props.overwrites[this.props.scope.scope_name];
-                    if (overwrites && overwrites[this.props.name]) {
-                        cm_instance.setValue(overwrites[this.props.name])
-                        cm_instance.setSelection({line: 100, ch: 1000}, {line: 0, ch: 0})
-                    }
-                }
-                render() {
-                    var value = this.props.name in expanded_values ? expanded_values[this.props.name] : this.props.value;
-                    if (typeof value === 'string') {
-                        if (value.startsWith('"function') || value.startsWith('"class')) {
-                            value = value.slice(1).slice(0,-1);
-                        }
-                        var should_expand = false;
-                        if (value.startsWith('{')) {
-                            should_expand = true;
-                        }
-                        if (value == '[]') {
-                            should_expand = false;
-                        } else if (value.startsWith('[')) {
-                            should_expand = true;
-                        }
-                    }
-                    return [
-                        !should_expand ? null :
-                        React.createElement('span', {className: 'expand-arrow', key: '>', onMouseDown: this.click_arrow}, this.state.expanded ? '▼' : '▶'),
-                        React.createElement(ReactCodeMirror, {
-                            key: 'codemirror',
-                            className: 'codemirror-container ' + (this.state.expanded ? 'codemirror-container-expanded' : ''),
-                            options: {
-                                value: value === undefined ? '' : value,
-                                mode: 'javascript',
-                                onChange: this.change,
-                                onKeypress: this.keypress,
-                                onFocus: this.focus,
-                            },
-                        })
-                    ]
-                }
             }
+            $('#scope-table').append($menu)
+        }
+    }
+    render() {
+        return React.createElement('table', null, this.props.scopes.map(scope => {
+            scope.names_in_scope.sort(case_insensitive_sort);
+            return [React.createElement('thead', {key: scope.scope_name},
+                React.createElement('tr', null,
+                    React.createElement('th', {colSpan: 2}, [
+                        React.createElement('span', {key: 'button', onClick: this.menu_button_click(scope), className: 'menu-button'}, '🔽'),
+                        React.createElement('span', {key: 'name'}, scope.scope_name),
+                    ])
+                )
+            ),
+            React.createElement('tbody', {key: scope.scope_name+' body'},
+                _.map(new_names[scope.scope_name], (expr, name) => {
+                    return React.createElement('tr', {className: 'added-name'}, [
+                        React.createElement('td', null, React.createElement(ReactCodeMirror, {key: 'new-name', options: {
+                                value: name,
+                                mode: 'javascript',
+                                onKeypress: (cm_instance, keyEvt) => {
+                                    if (keyEvt.key === 'Enter') {
+                                        keyEvt.preventDefault();
+                                        delete new_names[scope.scope_name][name]
+                                        new_names[scope.scope_name][cm_instance.getValue()] = expr;
 
-
-            class ScopeTable extends React.Component {
-                constructor(props) {
-                    super(props)
-                    this.menu_button_click = this.menu_button_click.bind(this);
-                }
-                update_height() {
-                    // resize table and scroll to bottom
-                    var height = $(window).height() - $('#current-line').outerHeight() - $('#setup-error').outerHeight();
-                    $('#scope-table').height(height - 6);
-
-                    // document.querySelector('#scope-table').scrollTop = 999999;
-                }
-                componentDidUpdate() {
-                    this.update_height();
-                }
-                componentDidMount() {
-                    this.update_height();
-                }
-                menu_button_click(scope) {
-                    return (evt) => {
-                        // menu already open
-                        if ($('.menu').length > 0) {
-                            $('.menu').remove();  
-                            return
-                        }
-
-                        var $button = $(evt.target);
-                        var $menu = $('<ul class="menu">');
-                        $menu.css({top: $button.offset().top+10, left: $button.offset().left})
-                        $menu.append($('<li>').text('Add name').on('click', function(evt) {
-                            if (new_names[scope.scope_name] === undefined) {
-                                new_names[scope.scope_name] = {};
-                            }
-                            new_names[scope.scope_name]['new_name'] = 'undefined'
-                            render_scope_table();
-                            $('.menu').remove()
-                        }))
-                        $menu.append($('<li>').text('Save names and values').on('click', function(evt) {
-                            $('.menu').remove()
-
-                            const prompt = require('electron-prompt');
-                            prompt('Enter a name').then(save_name => {
-                                if (!saved_overwrites[scope.scope_name]) {
-                                    saved_overwrites[scope.scope_name] = {}
-                                }
-
-                                saved_overwrites[scope.scope_name][save_name] = {}
-                                _.extend(saved_overwrites[scope.scope_name][save_name], active_overwrites[scope.scope_name], saved_overwrites[scope.scope_name], new_names[scope.scope_name])
-
-                                render_scope_table();
-                            })
-                        }))
-                        if (scope.scope_name in saved_overwrites) {
-                            $menu.append('<hr>')
-                            // add named saves
-                            _.each(saved_overwrites[scope.scope_name], function(names, save_name) {
-                                $menu.append($('<li>'+save_name+'</li>').on('click', function() {
-                                    $('.menu').remove()
-                                    active_overwrites[scope.scope_name] = saved_overwrites[scope.scope_name][save_name]
-
-                                    // remove @demo code below!
-                                    _.each(active_overwrites[scope.scope_name], function(expr, name) {
-                                        if (name == 'resize_drag') {
-                                            new_names[scope.scope_name]['resize_drag'] = expr;
-                                        }
-                                    })
-                                    // remove @demo code above!
-
-                                    var line_number = main_editor.getCursor().line+1;
-                                    run(main_editor.getValue(), line_number, main_editor)
-                                }))
-                            })
-
-                        }
-                        $('#scope-table').append($menu)
-                    }
-                }
-                render() {
-                    return React.createElement('table', null, this.props.scopes.map(scope => {
-                        scope.names_in_scope.sort(case_insensitive_sort);
-                        return [React.createElement('thead', {key: scope.scope_name},
-                            React.createElement('tr', null,
-                                React.createElement('th', {colSpan: 2}, [
-                                    React.createElement('span', {key: 'button', onClick: this.menu_button_click(scope), className: 'menu-button'}, '🔽'),
-                                    React.createElement('span', {key: 'name'}, scope.scope_name),
-                                ])
-                            )
-                        ),
-                        React.createElement('tbody', {key: scope.scope_name+' body'},
-                            _.map(new_names[scope.scope_name], (expr, name) => {
-                                return React.createElement('tr', {className: 'added-name'}, [
-                                    React.createElement('td', null, React.createElement(ReactCodeMirror, {key: 'new-name', options: {
-                                            value: name,
-                                            mode: 'javascript',
-                                            onKeypress: (cm_instance, keyEvt) => {
-                                                if (keyEvt.key === 'Enter') {
-                                                    keyEvt.preventDefault();
-                                                    delete new_names[scope.scope_name][name]
-                                                    new_names[scope.scope_name][cm_instance.getValue()] = expr;
-
-                                                    var line_number = main_editor.getCursor().line+1;
-                                                    run(main_editor.getValue(), line_number, main_editor)
-                                                }
-                                            }
-                                        }})),
-                                    React.createElement('td', null, React.createElement(Value, {name: name, value: values[name], scope: scope, overwrites: new_names})),
-                                ])
-                            }),
-                            scope.names_in_scope.map(name => {
-                                var className = '';
-                                if (scope.fill_in_names.includes(name)) {
-                                    className += ' fill-in'
-                                    if (!active_overwrites[scope.scope_name] || !active_overwrites[scope.scope_name][name]) {
-                                        className += ' fill-in-blank'
+                                        var line_number = main_editor.getCursor().line+1;
+                                        run(main_editor.getValue(), line_number, main_editor)
                                     }
                                 }
-                                var is_overwritten = active_overwrites[scope.scope_name] && active_overwrites[scope.scope_name][name] // && active_overwrites[scope.scope_name][name] !== 'null';
-                                return React.createElement('tr', {key: name, className: className}, [
-                                    React.createElement('td', {key: name+' name'}, name),
-                                    React.createElement('td', {key: name+' value', className: is_overwritten ? 'overwritten' : ''}, React.createElement(Value, {name: name, value: values[name], scope: scope, overwrites: active_overwrites})),
-                                ])
-                            }),
-                        )
-                        ]
-                    }));
-                }
-            }
-
-            class Current_Line extends React.Component {
-                constructor(props) {
-                    super(props)
-                }
-                render() {
-                    return React.createElement('div', null, [
-                        React.createElement('h2', {key: 'line-#'}, `Line #${this.props.line_number}`),
-                        React.createElement(ReactCodeMirror, {key: 'line-src', className: 'current-line-src', options: {value: this.props.src, mode: 'javascript'}}),
-                        React.createElement(ReactCodeMirror, {key: 'line-output', className: 'current-line-output', options: {value: this.props.error || this.props.value}, style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
-                        // React.createElement(Value, {name: this.props.src, value: this.props.error || this.props.value}),
+                            }})),
+                        React.createElement('td', null, React.createElement(Value, {name: name, value: values[name], scope: scope, overwrites: new_names})),
                     ])
-                }
-            }
+                }),
+                scope.names_in_scope.map(name => {
+                    var className = '';
+                    if (scope.fill_in_names.includes(name)) {
+                        className += ' fill-in'
+                        if (!active_overwrites[scope.scope_name] || !active_overwrites[scope.scope_name][name]) {
+                            className += ' fill-in-blank'
+                        }
+                    }
+                    var is_overwritten = active_overwrites[scope.scope_name] && active_overwrites[scope.scope_name][name] // && active_overwrites[scope.scope_name][name] !== 'null';
+                    return React.createElement('tr', {key: name, className: className}, [
+                        React.createElement('td', {key: name+' name'}, name),
+                        React.createElement('td', {key: name+' value', className: is_overwritten ? 'overwritten' : ''}, React.createElement(Value, {name: name, value: values[name], scope: scope, overwrites: active_overwrites})),
+                    ])
+                }),
+            )
+            ]
+        }));
+    }
+}
+
+class Current_Line extends React.Component {
+    constructor(props) {
+        super(props)
+    }
+    render() {
+        return React.createElement('div', null, [
+            React.createElement('h2', {key: 'line-#'}, `Line #${this.props.line_number}`),
+            React.createElement(ReactCodeMirror, {key: 'line-src', className: 'current-line-src', options: {value: this.props.src, mode: 'javascript'}}),
+            React.createElement(ReactCodeMirror, {key: 'line-output', className: 'current-line-output', options: {value: this.props.error || this.props.value}, style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
+            // React.createElement(Value, {name: this.props.src, value: this.props.error || this.props.value}),
+        ])
+    }
+}
 
 
 

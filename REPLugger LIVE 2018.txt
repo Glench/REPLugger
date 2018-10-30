@@ -1,0 +1,201 @@
+REPLugger LIVE 2018 Talk
+
+Hi! I'll be presenting REPLugger, a live code editor, but first I want to give just a little context for where it came from.
+
+It's been about 7 years since Bret Victor came out with his amazing programming demos in his presentation Inventing on Principle and his essay Learnable Programming.
+
+As I see it, the main thing Bret did with these demos is show us one of the biggest and most under-appreciated problems with programming — that programmers can't see what their programs are doing. Programmers look at a bunch of text and have to imagine most of what the program does in their heads. And his demos not only pointed out this problem but provided some plausible solutions — showing concrete data in the editing experience.
+
+This sounds like a great research direction to me, but I wanted to see for myself. After working with Bret for several years, I made Flowsheets v2 in 2017. This was a prototype programming environment for creating small data transformation programs. Its main idea was that you always saw the data associated with the code, kind of like a spreadsheet or a reactive notebook, though it felt distinct from these. Even though it was just a prototype, it quickly became my preferred programming environment, mostly because it felt so great to see the data as I programmed. Instead of blindly typing code and guessing if it worked, I had concrete evidence that the code did what I expected. Having this evidence gave me an informed sense of confidence in my code, and as a result programming basically just felt *good*, it felt nice! 
+
+So from using Flowsheets I verified that seeing data as I programmed actually does feel good in practice. But Flowsheets was only designed for making small programs — showing all the data in a large program would be overwhelming. So I began to wonder, how could runtime data be brought into the programming exprience in large and complex systems, ones that professional programmers tend to work on? What data is actually useful for these programmers to see when they're creating large systems?
+
+I built REPLugger, the prototype I'm about to show you, as one answer to these questions.
+
+But before I show you REPLugger, I first wanted to address three of the main criticisms of programming research projects:
+
+    - "this only works for toy programs"              - not representative of real programs
+    - "this is fine for beginners but not me"         - doesn't address actual intermediate or expert programmer concerns
+    - "this isn't useful enough for me to adopt"      - not practical
+
+To me, all these criticisms point to one underlying concern: that programming research doesn't adequately address the lived human experience of programming, a concern I share.
+
+So with REPLugger I tried to address these by
+
+    - testing it with the code for Flowsheets, a real program I made with a few thousand lines of JS
+    - using it myself
+    - and seeing empirically if it actually provided tangible benefits
+
+My hope is that addressing these criticisms, I can help bring some of the promise we saw in Bret Victor's demos to reality, to improve the everyday experience of the 20 million or so programmers of the world, and the countless number of potential programmers in the future.
+
+
+[REPLugger intro]
+
+So with the context out of the way, this is REPLugger.
+
+On the left there's a text editor. In this case I'm editing a real file from the Flowsheets codebase.
+
+On the right we have a table listing scopes, names, and values from a sample run of the program. 
+
+And on the bottom we show the output of the line the cursor is on.
+
+Changing the cursor changes the debugger and output UIs. You can see as I move the cursor, the output at the bottom changes, and names are added to the table.
+
+And these UIs also changed as I type. If I type 1+1, the output down here shows the result of that expression.
+
+    for example, 1+1 = 2
+
+This is the "REPL" part of REPLugger. Like any other REPL, I can do little experiments and try things out. But unlike most REPLs, the results are just right there, available as I code without hitting any extra keys or switching windows. Also unlike most REPLs, REPLugger has access to the entire program state.
+
+So if I wanted to see how many cells there were in this grid I can just type
+
+    rows * columns
+
+And there's the total number of cells. And if I found I wanted this value in my program, I could just assign it to a variable.
+
+    num_cells = rows * columns;
+
+And it shows up here in the table. This is the "debugger" part of REPLugger. It shows the program's stack of variables and sample values. It tries to show the larger context of your program with a running example.
+
+The idea of REPLugger is that the REPL and debugger parts live alongside the code editor. So you can be coding along as you do today, typing text into an editor, but also be seeing an example evaluation of that code in the REPL UI and the larger system state in the debugger UI.
+
+ This is what I meant by scalable. This UI could work with a system of arbitrary complexity and many different types of codebases.
+
+Let's do a little simple programming to see how that plays out.
+
+
+[Programming with REPLugger]
+
+First I want to add a little code that changes the background's height based on the window height. so I start writing my if statement
+
+in initialize_grid:
+
+    if (window.innerHeight > height) {
+
+    }
+
+
+As I'm typing I see the output. This comes directly out of my frustration with programming — I *just* want to know if the line I'm writing is correct. Please, oh please let me know. Does it work even in the case I expect?
+
+of course, a lot of this is UI code, so we can see how it looks visually by running the program. However, with REPLugger, I wanted an editor that would work across all types of projects, projects with and without UIs, so it's working more on the symbolic level of the code and not the visual level of the UI.
+
+When I showed REPLugger to two friends, both remarked on how calm the experience felt. There's very little interaction necessary. Instead of frantically switching between windows, REPLugger's extra UI provides a stable frame for answering questions about program state. When I call REPLugger "pleasant", this is part of what I mean. It just feels good.
+
+
+
+[Filling in example arguments]
+
+available to the programmer when they come back to this code.
+
+
+
+[Debugging]
+
+look through,
+
+
+[Overwrites]
+
+Our tools are designed to solve problems. To borrow an analogy from Bret Victor, looking at a hammer you can see - oh okay, focusing human force. The hard part is the "hard part" the hammerhead.
+
+if you look at programming environments today and try to reason backward to figure out what the difficult parts of programming are, you'd come to the conclusion that finding and manipulating text. But this obviously isn't the hard part of programming. The hard part is understanding how pieces fit together.
+
+a lot of debugging depends on intuition, and intuition depends on data. "we have this value, this value, and this value" -> intuition -> oh this one thing explains. one problem with print statements is that you have to beg for information. it completely precludes the idea of discovery. and getting the program to give us this information is often arduous
+
+
+[Working in teams]
+
+saved overwrites, if saved in source control, could be useful in teams. for example, say another programmer came into this code, say, here. someone else on the team wrote this code and this other programmer has to come into the code and figure out what they wrote and why they wrote it the way it did.
+
+if the team was using REPLugger and shared their overwrites in the team, this new programmer would have data to see the conditions they expected this code to run under.
+
+
+
+
+[Getting runtime data]
+
+freezing program state, importing it into REPLugger
+
+
+[TODO]
+
+time?
+visualizations? tables? ipython notebooks?
+solid model for sample environment?
+
+
+[Things to take away]
+
+see simple data
+calm experience
+
+overwrites - ways of working with states of program interactively, show context
+
+
+
+
+
+
+
+----------------------------------------
+----------------------------------------
+----------------------------------------
+----------------------------------------
+----------------------------------------
+----------------------------------------
+----------------------------------------
+----------------------------------------
+----------------------------------------
+----------------------------------------
+
+
+
+
+
+
+
+it's been almost 7 years since Bret's inventing on principle, where he demonstrated an inspiring direction to improve programming — showing program data. yet I still haven't seen any compelling examples of how that work could be done in a practical way.
+
+also felt some criticisms about programming research projects, including Bret's work:
+    - made for beginner programmers,
+    - they only work for toy problems
+    - they don't provide enough utility for programmers to adopt them
+
+Like many of us here, I'm inspired by Bret's work, but offers more of a good framing of the problem and provocative examples of what else could be done, but not solutions. So I wanted a solution that actually provided tangible benefits.
+
+inspired by Bret
+flowsheets felt good
+With Flowsheets, it felt good! It wasn't based on principle — it just felt good. it was biased
+
+no theorizing — what feedback is actually useful to programmers? I examined my own experience and Jonathan Blow and found that most of the time I just wanted some feedback to see if the line I just wrote worked as I expected. and same goes for reading code - just want to see an example of what the thing is doing (often don't need to know its general behavior)
+
+
+common underlying criticism: programming research doesn't actually address the human experience of programming. good that researchers are divorced from everyday experience since it allows for greater freedom of ideas, but gotta come back into the realm of human experience at some point. and my argument is that doing this actually provides a lot of inspiration. some of the best scientists are those working at the intersection of ideas and human experience
+
+
+
+Watched Jonathan Blow, show clips of him going "wait what's happening?"
+
+stop arguing on principles, argue on evidence!
+
+new feature:
+    replugger() captures state
+    actually do some programming to show how it works in practice
+    - add number of overwrite groups as badge to dropdown, to show other programmers there are things to check out
+
+
+REPLugger is calm - provides stable context, not fleeting like many programs running through time. also calm since there's no flipping back and forth between windows.
+
+
+design values - be clear about what circumstances an intervention was designed for, who it would help, and when it's appropriate
+
+
+get across that this is USEFUL WHILE PROGRAMMING
+show the team-based programming thing more clearly
+
+show the data 
+
+look on programming environment? What does this interface say about what's hard about programming? text editors and IDEs say the hard thing is about finding and manipulating text.
+
+show concrete example of how overwrites can be useful to programmers
+show example of how states can be useful to other programmers
