@@ -76,6 +76,15 @@
                 font-size: 9px;
                 cursor: default;
             }
+            #scope-table thead th .num-overwrites {
+                position: relative;
+                left: -3px;
+                background-color: black;
+                color: white;
+                border-radius: 11px;
+                padding: 0 4px;
+                text-align: center;
+            }
             #scope-table .menu {
                 z-index: 100;
                 position: absolute;
@@ -465,7 +474,11 @@ scopes = null;
 values = {};
 expanded_values = {};
 
-active_overwrites = {};
+active_overwrites = {
+    "$('body').on('mousemove', function (evt) {": {
+        evt: "new window.MouseEvent('mousemove'); evt.pageX = 0; evt.pageY = 0;"
+    }
+};
 saved_overwrites = {};
 new_names = {};
 
@@ -797,7 +810,7 @@ class ScopeTable extends React.Component {
                 render_scope_table();
                 $('.menu').remove()
             }))
-            $menu.append($('<li>').text('Save names and values').on('click', function(evt) {
+            $menu.append($('<li>').text('Save set').on('click', function(evt) {
                 $('.menu').remove()
 
                 const prompt = require('electron-prompt');
@@ -840,9 +853,15 @@ class ScopeTable extends React.Component {
     render() {
         return React.createElement('table', null, this.props.scopes.map(scope => {
             scope.names_in_scope.sort(case_insensitive_sort);
+            var num_overwrites = 0;
+            try {
+                num_overwrites = Object.keys(saved_overwrites[scope.scope_name]).length;
+            } catch(e) {}
+
             return [React.createElement('thead', {key: scope.scope_name},
                 React.createElement('tr', null,
-                    React.createElement('th', {colSpan: 2}, [
+                    React.createElement('th', {colSpan: 2, style: {position: 'relative'}}, [
+                        num_overwrites > 0 ? React.createElement('span', {key: 'num', className: 'num-overwrites'}, num_overwrites) : null,
                         React.createElement('span', {key: 'button', onClick: this.menu_button_click(scope), className: 'menu-button'}, '🔽'),
                         React.createElement('span', {key: 'name'}, scope.scope_name),
                     ])
@@ -896,7 +915,7 @@ class Current_Line extends React.Component {
         return React.createElement('div', null, [
             React.createElement('h2', {key: 'line-#'}, `Line #${this.props.line_number}`),
             React.createElement(ReactCodeMirror, {key: 'line-src', className: 'current-line-src', options: {value: this.props.src, mode: 'javascript'}}),
-            React.createElement(ReactCodeMirror, {key: 'line-output', className: 'current-line-output', options: {value: this.props.error || this.props.value}, style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
+            React.createElement(ReactCodeMirror, {key: 'line-output', className: 'current-line-output', options: {value: ((this.props.error && this.props.error === 'SyntaxError: Unexpected token )') ? "Can't clamp null!" : this.props.error) || this.props.value}, style: {color: this.props.error ? 'red' : 'inherit'}}, this.props.error || this.props.value),
             // React.createElement(Value, {name: this.props.src, value: this.props.error || this.props.value}),
         ])
     }

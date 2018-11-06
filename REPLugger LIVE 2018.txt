@@ -1,16 +1,19 @@
 REPLugger LIVE 2018 Talk
 
-Hi! I'll be presenting REPLugger, a live code editor, but first I want to give just a little context for where it came from.
+
+Hi! I'll be presenting REPLugger, a live code editor, but first I want to give just some context for where it came from.
 
 It's been about 7 years since Bret Victor came out with his amazing programming demos in his presentation Inventing on Principle and his essay Learnable Programming.
 
-As I see it, the main thing Bret did with these demos is show us one of the biggest and most under-appreciated problems with programming — that programmers can't see what their programs are doing. Programmers look at a bunch of text and have to imagine most of what the program does in their heads. And his demos not only pointed out this problem but provided some plausible solutions — showing concrete data in the editing experience.
+From a programming perspective, I think the main thing Bret did with these demos is show us one of the biggest and most under-appreciated problems with programming — that programmers can't see what their programs are doing. Programmers look at a bunch of text and have to imagine most of what the program does in their heads. And his demos not only pointed out this problem but provided some plausible solutions — showing concrete data in the editing experience.
+
+
 
 This sounds like a great research direction to me, but I wanted to see for myself. After working with Bret for several years, I made Flowsheets v2 in 2017. This was a prototype programming environment for creating small data transformation programs. Its main idea was that you always saw the data associated with the code, kind of like a spreadsheet or a reactive notebook, though it felt distinct from these. Even though it was just a prototype, it quickly became my preferred programming environment, mostly because it felt so great to see the data as I programmed. Instead of blindly typing code and guessing if it worked, I had concrete evidence that the code did what I expected. Having this evidence gave me an informed sense of confidence in my code, and as a result programming basically just felt *good*, it felt nice! 
 
-So from using Flowsheets I verified that seeing data as I programmed actually does feel good in practice. But Flowsheets was only designed for making small programs — showing all the data in a large program would be overwhelming. So I began to wonder, how could runtime data be brought into the programming exprience in large and complex systems, ones that professional programmers tend to work on? What data is actually useful for these programmers to see when they're creating large systems?
+So from using Flowsheets I verified that seeing data as I programmed actually can feel good in practice. But Flowsheets was only designed for making small programs — showing all the data in a large program would be overwhelming. So I began to wonder, how could runtime data be brought into the programming exprience in large and complex systems, ones that professional programmers tend to work on? What data is actually useful for these programmers to see when they're creating large systems?
 
-I built REPLugger, the prototype I'm about to show you, as one answer to these questions.
+I built REPLugger, the prototype I'm about to show you, as one possible answer to these questions.
 
 But before I show you REPLugger, I first wanted to address three of the main criticisms of programming research projects:
 
@@ -28,6 +31,14 @@ So with REPLugger I tried to address these by
 
 My hope is that addressing these criticisms, I can help bring some of the promise we saw in Bret Victor's demos to reality, to improve the everyday experience of the 20 million or so programmers of the world, and the countless number of potential programmers in the future.
 
+I made this demo for
+    - an advanced programmer (not beginners)
+    - writing (not reading)
+    - a real program (not a toy program)
+    - to see what concrete program data is empirically useful when programming
+
+wanted an empirical approach in some ways and a suggstive approach in other ways
+
 
 [REPLugger intro]
 
@@ -35,38 +46,36 @@ So with the context out of the way, this is REPLugger.
 
 On the left there's a text editor. In this case I'm editing a real file from the Flowsheets codebase.
 
-On the right we have a table listing scopes, names, and values from a sample run of the program. 
+On the right we have a table listing scopes, names, and values from a sample run of the program. Kind of like a debugger.
 
-And on the bottom we show the output of the line the cursor is on.
+And on the bottom we show the output of the line the cursor is on. Kind of like a REPL. Get it? REPL and a debugger makes REPLugger.
 
-Changing the cursor changes the debugger and output UIs. You can see as I move the cursor, the output at the bottom changes, and names are added to the table.
+Anyway, changing the cursor changes the debugger and output UIs. You can see as I move the cursor, the output at the bottom changes, and names are added to the table. REPLugger basically tries to run the code up to the current line.
 
-And these UIs also changed as I type. If I type 1+1, the output down here shows the result of that expression.
+These UIs also changed as I type. If I type 1+1, the REPL shows the result of that expression.
 
     for example, 1+1 = 2
 
-This is the "REPL" part of REPLugger. Like any other REPL, I can do little experiments and try things out. But unlike most REPLs, the results are just right there, available as I code without hitting any extra keys or switching windows. Also unlike most REPLs, REPLugger has access to the entire program state.
+ Like any other REPL, I can do little experiments and try things out. But unlike most REPLs, the results are just right there, available as I type in my text editor, without switching windows or having to do anything. Also unlike most REPLs, REPLugger has access to the entire program's state without having to laboriously copy and paste code.
 
-So if I wanted to see how many cells there were in this grid I can just type
+For example, if I wanted to see how many cells there were in this grid I can just type
 
     rows * columns
 
-And there's the total number of cells. And if I found I wanted this value in my program, I could just assign it to a variable.
+And there's the total number of cells. And if I found I wanted to use this value in my program, I could just assign it to a variable.
 
-    num_cells = rows * columns;
+    var num_cells = rows * columns;
 
-And it shows up here in the table. This is the "debugger" part of REPLugger. It shows the program's stack of variables and sample values. It tries to show the larger context of your program with a running example.
+And it shows up here in the debugger.
 
-The idea of REPLugger is that the REPL and debugger parts live alongside the code editor. So you can be coding along as you do today, typing text into an editor, but also be seeing an example evaluation of that code in the REPL UI and the larger system state in the debugger UI.
+The idea of REPLugger is that the REPL and debugger live alongside your code editor so you're never programming blind. You can see all the values in the program, get feedback as you type, try experiments like you would in a REPL, etc. And most of this happens without having to interact with the UI, you just type code as normal and the UIs are available if you want to use them. From my experience watching people program, I think something like this will not only prevent simple bugs, but make programming just feel more plasant.
 
- This is what I meant by scalable. This UI could work with a system of arbitrary complexity and many different types of codebases.
-
-Let's do a little simple programming to see how that plays out.
+Let's do a little simple programming to see what I mean.
 
 
 [Programming with REPLugger]
 
-First I want to add a little code that changes the background's height based on the window height. so I start writing my if statement
+First I want to add a little code that changes the background's height based on the window height. so I start writing my if-statement
 
 in initialize_grid:
 
@@ -75,26 +84,88 @@ in initialize_grid:
     }
 
 
-As I'm typing I see the output. This comes directly out of my frustration with programming — I *just* want to know if the line I'm writing is correct. Please, oh please let me know. Does it work even in the case I expect?
+We see something interesting here. I haven't finished writing the expression but REPLugger still finds a valid expression to run and shows me what that evaluates to. The point of this is to give me feedback as I type so that I can be assured my code is actually doing what I imagine it's doing. So I'll finish writing the expression... and the REPL continues to show me that this line evaluates to true.
 
-of course, a lot of this is UI code, so we can see how it looks visually by running the program. However, with REPLugger, I wanted an editor that would work across all types of projects, projects with and without UIs, so it's working more on the symbolic level of the code and not the visual level of the UI.
+If I wanted to check why it evaluates to true, I could just highlight parts of the expression and REPLugger shows me the value of that part.
 
-When I showed REPLugger to two friends, both remarked on how calm the experience felt. There's very little interaction necessary. Instead of frantically switching between windows, REPLugger's extra UI provides a stable frame for answering questions about program state. When I call REPLugger "pleasant", this is part of what I mean. It just feels good.
+But let's continue writing and make the background height twice the window's height.
+
+    height = window.innerHeight * 2;
+
+Again we see the value updated in the REPL and the table.
+
+I have to say, programming with this kind of feedback feels nice. This idea comes directly out of my experience with programming — often, I simply want to know — does the current line I'm writing work? I can't know in most programming environments or I have to jump through hoops to print out the value. It's really frustrating! But in REPLugger, it's right there.
+
+of course, a lot of this is UI code, so we'd probably want to run the program to see how it looks visually. [ run code ] yeah, looks right
+
+While it would probably be nice to see the visual output of the program change as I type, I wanted REPLugger to be able to work for programs with and without UIs, so I chose to have REPLugger work at the symbolic level of the code instead of the visual level of the UI. 
+
+Let's see more of how that works.
 
 
 
 [Filling in example arguments]
 
-available to the programmer when they come back to this code.
+The main idea of REPLugger is you can always see concrete values.
+
+In some code, like in functions with abstract arguments, REPLugger doesn't have any values to show.
+
+To demonstrate this, we'll make a new function, clamp, that takes three arguments. When we do this, we see that REPLugger highlights those arguments in red, showing they don't have values. So what we can do is click in these cells and fill in some values. [1 2 10] They turn yellow to show they've been manually edited.
+
+And then we can write the rest of the function and we'll have concrete feedback as we do it...
+    if (num < min) {
+        return min;
+    } else if (num > max) {
+        return max;
+    }
+    return num;
+
+Clamp is a simple function so we don't really need much feedback here. But we can use the feedback to play around and try things out.
+
+So what if we tried to clamp null between 1 and 2? 1? huh? Let's see why that happened. We can go back into the function and manually edit the argument here and see that in this first comparison it thinks null is less than 1. Wow, thank you javascript.
+
+So again this concrete feedback comes in handy, not just as we're writing code but as we're reading it, especially when we have the ability to manually edit data in the program to see what would happen in different cases. Although seeing the results of one line at a time when reading code isn't very useful — REPLugger was made more for writing code.
+
+So say we felt like this null case was important and that we wanted to make sure we were aware of when we went back to the code later. We can go to this dropdown over here and save this set of arguments and name it. We see a little number appear here in this dropdown showing that there is one saved case.
+
+If we change this argument back to what we had before and save that too, we call it default. So now we have two cases. Default is the one shown right now, but by selecting the other it changes the value. And I can switch back. 
+
+So imagine I leave the program and come back in a few months when I forgot about it. When I click in here I see, oh, there are two cases I wanted myself to know about when looking at this function. There's this case, and there's this case. Thanks, past me!
 
 
+Or imagine I'm on a team of programmers all using REPLugger. I wrote this function and saved these two examples in source control. So when a different team member comes into this function and is using REPLugger, they can see those examples. These saved examples provide additional context for what I had in mind when writing this code, what conditions I expected this code to run under, almost like user-facing unit tests.
 
-[Debugging]
+We've all tried to read unfamiliar code and had questions like, "why did the person write it like this? how did they expect this to work?" And we can't really answer those questions because they're not in the code. By having these filled-in examples in REPLugger, we not only get live feedback as we're writing the code, but also some context when we're reading or modifying the code later.
 
-look through,
+But clamp is just a simple example I'm using to demonstrate the features of REPLugger. Where I think this stuff is more useful is more complicated code. So let's look at that now.
 
 
-[Overwrites]
+[Deeper nested code]
+
+So if we come down here we can see we're down in a few different scopes. This code handles mouse movements, mostly when clicking and dragging parts of boxes in Flowsheets.
+
+First we see this yellow evt parameter. I previously filled in this evt parameter with an example. Clicking in here we see that this value was created from a short expression I wrote. When I hit enter, it evaluates the expression and shows the value.
+
+    new window.MouseEvent('mousemove'); evt.pageX = 0; evt.pageY = 0;
+
+But here's something else: REPLugger is saying there's an error. And all the values in this table are blank. If we look here, we see the code is looking for resize_drag to have a truthy value but resize_drag is null! So REPLugger ignored the if-statement in order to try to run up until where the cursor is.
+
+So what we can do is come to this dropdown and choose "add name". We can call this resize_drag and give it a value:
+
+    new Resize_Drag(create_ui_block())
+
+So what this is doing is saying... "ignore whatever the value of resize_drag was and instead make it this value, but only in this scope". We're overwriting the value temporarily to get the program into a useful state.
+
+And we see that by doing that all the variables in this table now have values and the error went away. Using this overwrite, we put the program in a state.
+
+I think overwriting is a really exciting feature. We can overwrite any part of the program with any values we want.
+
+So right here we can say, I don't want dx to be that, I want to see what would happen when it's 10, or the same as cell_width.
+
+The idea for overwrites comes out of my experience as a software engineer. Often, I'd suspect bugs were coming from a program because of a particular state, but had no way of getting the program into that state or that codepath in order to check.
+
+In fact, I'd say a lot of what makes programming difficult is that programs can get into many different states and code has to handle those many states. To help programmers with that, we give them explicit control over the states so they can see for themselves how their code works under different conditions. This can be especially useful in debugging where often we have hypotheses about what's going on in our code but it's not straightforward to test that hypothesis and get feedback. Overwrites in REPLugger are an attempt to let programmers quickly and fluidly try their hypotheses and get an understanding of how large programs work in different conditions.
+
 
 Our tools are designed to solve problems. To borrow an analogy from Bret Victor, looking at a hammer you can see - oh okay, focusing human force. The hard part is the "hard part" the hammerhead.
 
@@ -103,11 +174,6 @@ if you look at programming environments today and try to reason backward to figu
 a lot of debugging depends on intuition, and intuition depends on data. "we have this value, this value, and this value" -> intuition -> oh this one thing explains. one problem with print statements is that you have to beg for information. it completely precludes the idea of discovery. and getting the program to give us this information is often arduous
 
 
-[Working in teams]
-
-saved overwrites, if saved in source control, could be useful in teams. for example, say another programmer came into this code, say, here. someone else on the team wrote this code and this other programmer has to come into the code and figure out what they wrote and why they wrote it the way it did.
-
-if the team was using REPLugger and shared their overwrites in the team, this new programmer would have data to see the conditions they expected this code to run under.
 
 
 
@@ -120,14 +186,26 @@ freezing program state, importing it into REPLugger
 [TODO]
 
 time?
-visualizations? tables? ipython notebooks?
+show more data? (chrome debugger)
+visualization types? tables? ipython notebooks?
 solid model for sample environment?
 
 
 [Things to take away]
 
-see simple data
+concrete data to bring clarity
+
+    when writing lines
+    when reading code
+
+    feedback when writing current line
+    showing whole program context
+
+the ability to try things out, save
+making states explicit and manipulable
+
 calm experience
+When I showed REPLugger to two friends, both remarked on how calm the experience felt. There's very little interaction necessary. Instead of frantically switching between windows, REPLugger's extra UI provides a stable frame for answering questions about program state. When I call REPLugger "pleasant", this is part of what I mean. It just feels good.
 
 overwrites - ways of working with states of program interactively, show context
 

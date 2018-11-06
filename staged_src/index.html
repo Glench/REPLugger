@@ -17,7 +17,7 @@
       function recompile_css() {
         // @Cleanup @Speed reading the file and recompiling every second is probably hella slow,
         // but hot-loading style changes is hella tight.
-        less.render(fs.readFileSync(__dirname+'/../src/style.less').toString(), function(e, cssObj) {
+        less.render(fs.readFileSync(__dirname+'/style.less').toString(), function(e, cssObj) {
           if (e) throw e;
           var currentCss = document.querySelector('style').innerText
           if (currentCss !== cssObj.css) {

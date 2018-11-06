@@ -20,6 +20,12 @@ var cell_width = 88; // including borders
 var cell_height = 19; // including borders
 module.exports.cell_height = cell_height;
 
+
+const visualizations = require('./visualizations');
+const interpreter = require('./interpreter');
+const Block = interpreter.Block;
+const Import = interpreter.Import;
+
 // @Cleanup: probably move to utils at some point
 function clamp(num, min, max) {
     if (num < min) {
@@ -29,11 +35,6 @@ function clamp(num, min, max) {
     }
     return num;
 }
-
-const visualizations = require('./visualizations');
-const interpreter = require('./interpreter');
-const Block = interpreter.Block;
-const Import = interpreter.Import;
 
 var ui_blocks = [];
 module.exports.ui_blocks = ui_blocks;
